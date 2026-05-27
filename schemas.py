@@ -1,0 +1,87 @@
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class CourtRentRequest(BaseModel):
+    court_id: int
+    customer_name: str = Field(min_length=1, max_length=128)
+    time_option_id: int
+
+
+class RacketRentRequest(BaseModel):
+    racket_id: int
+    customer_name: str = Field(min_length=1, max_length=128)
+    time_option_id: int
+
+
+class RacketSwapRequest(BaseModel):
+    rental_id: int
+    new_racket_id: int
+    reason: str = Field(min_length=1)
+
+
+class TimeOptionCreate(BaseModel):
+    type: str
+    label: str
+    duration_minutes: int
+    price: float
+    is_active: bool = True
+
+
+class TimeOptionUpdate(BaseModel):
+    label: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    price: Optional[float] = None
+    is_active: Optional[bool] = None
+
+
+class CourtCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class CourtUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class RacketCreate(BaseModel):
+    name: str
+    rf_chip_id: str = ""
+
+
+class RacketUpdate(BaseModel):
+    name: Optional[str] = None
+    rf_chip_id: Optional[str] = None
+    status: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str = "cashier"
+
+
+class PasswordReset(BaseModel):
+    password: str = Field(min_length=4)
+
+
+class LoginForm(BaseModel):
+    username: str
+    password: str
+
+
+class RentalInfo(BaseModel):
+    rental_id: int
+    customer: str
+    ends_at: datetime
+    time_remaining_seconds: int
+    time_option_label: str
+    amount_paid: float
+
+    class Config:
+        from_attributes = True

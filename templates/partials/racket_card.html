@@ -1,0 +1,90 @@
+<div class="racket-card bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+     data-racket-id="{{ card.racket.id }}"
+     data-status="{{ card.status }}"
+     {% if card.rental %}data-rental-id="{{ card.rental.id }}" data-ends-at="{{ card.rental.ends_at.isoformat() }}"{% endif %}>
+
+  <!-- Top accent bar -->
+  <div class="h-0.5
+    {% if card.status == 'available' %}bg-emerald-400
+    {% elif card.status == 'damaged' %}bg-red-400
+    {% else %}bg-amber-400{% endif %}"></div>
+
+  <!-- Header: name + status inline -->
+  <div class="px-3 pt-2 pb-1.5 flex items-center justify-between gap-2">
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+      <h3 class="font-semibold text-gray-900 text-sm truncate">{{ card.racket.name }}</h3>
+      {% if card.status == 'available' %}
+      <span class="inline-flex items-center gap-1 text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-px rounded-full shrink-0">
+        <span class="w-1 h-1 rounded-full bg-emerald-500"></span> Available
+      </span>
+      {% elif card.status == 'damaged' %}
+      <span class="inline-flex items-center gap-1 text-[11px] font-medium bg-red-50 text-red-700 border border-red-200 px-1.5 py-px rounded-full shrink-0">
+        <span class="w-1 h-1 rounded-full bg-red-500"></span> Damaged
+      </span>
+      {% else %}
+      <span class="inline-flex items-center gap-1 text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-px rounded-full shrink-0">
+        <span class="w-1 h-1 rounded-full bg-amber-500 animate-pulse"></span> Rented
+      </span>
+      {% endif %}
+    </div>
+    <span title="RF Chip Tracking: Coming Soon" class="text-gray-300 cursor-help text-xs shrink-0">📡</span>
+  </div>
+
+  <!-- Info box (same layout for available + rented so buttons align) -->
+  <div class="mx-3 mb-2 bg-gray-50 rounded-lg px-2.5 py-2">
+    <div class="flex items-center justify-between gap-2 text-[11px] leading-tight mb-1.5">
+      <div class="min-w-0">
+        <span class="text-gray-400">Customer</span>
+        {% if card.status == 'rented' %}
+        <span class="font-semibold text-gray-800 truncate block">{{ card.rental.customer_name }}</span>
+        {% else %}
+        <span class="font-semibold text-gray-800 truncate block invisible select-none" aria-hidden="true">—</span>
+        {% endif %}
+      </div>
+      <div class="text-right shrink-0">
+        <span class="text-gray-400">Plan</span>
+        {% if card.status == 'rented' %}
+        <span class="text-gray-700 block">
+          {{ card.rental.time_option.label }}{% if card.rental.bonus_minutes %} <span class="text-violet-600">+{{ card.rental.bonus_minutes // 60 }}h</span>{% endif %}
+        </span>
+        {% else %}
+        <span class="text-gray-700 block invisible select-none" aria-hidden="true">—</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-baseline justify-between gap-2 pt-1.5 border-t border-gray-200">
+      {% if card.status == 'rented' %}
+      <div class="countdown font-mono text-lg font-bold text-amber-700 tracking-wide leading-none" data-seconds="{{ card.time_remaining }}">--:--:--</div>
+      <div class="text-[11px] text-gray-400 shrink-0">ends {{ card.rental.ends_at.strftime('%H:%M') }}</div>
+      {% else %}
+      <div class="font-mono text-lg font-bold leading-none invisible select-none" aria-hidden="true">00:00:00</div>
+      <div class="text-[11px] text-gray-400 shrink-0 invisible select-none" aria-hidden="true">ends 00:00</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="px-3 pb-2.5 flex gap-2">
+    {% if card.status == 'available' %}
+    <button onclick="openRentRacketModal({{ card.racket.id }}, '{{ card.racket.name }}')"
+      class="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
+      Rent Racket
+    </button>
+    {% elif card.status == 'rented' %}
+    <button onclick="openSwapModal({{ card.rental.id }}, '{{ card.rental.customer_name }}', {{ card.time_remaining }})"
+      class="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
+      Swap
+    </button>
+    <button onclick="completeRacket({{ card.rental.id }})"
+      class="flex-1 bg-gray-800 hover:bg-gray-900 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
+      Complete
+    </button>
+    {% elif card.status == 'damaged' and is_admin %}
+    <form method="post" action="/admin/racket/{{ card.racket.id }}/mark-available" class="flex-1">
+      <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
+        Mark Available
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>

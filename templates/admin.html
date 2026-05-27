@@ -1,0 +1,565 @@
+{% extends "base.html" %}
+{% block title %}Admin — Pickleball{% endblock %}
+{% block head %}
+<style>
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .tab-btn {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #6b7280;
+    padding: 0.625rem 0.875rem;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: #111827; }
+  .tab-btn.active { color: #0f766e; border-bottom-color: #0d9488; font-weight: 600; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="p-6 lg:p-8 max-w-screen-xl">
+
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold text-gray-900">Admin Panel</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Manage courts, rackets, users and pricing</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
+    <button class="tab-btn active" data-tab="time-options">Time Options</button>
+    <button class="tab-btn" data-tab="promos">Promotions</button>
+    <button class="tab-btn" data-tab="rackets">Rackets</button>
+    <button class="tab-btn" data-tab="courts">Courts</button>
+    <button class="tab-btn" data-tab="users">Users</button>
+    <button class="tab-btn" data-tab="logs">Audit Log</button>
+    <button class="tab-btn" data-tab="camera">Camera</button>
+    <button class="tab-btn" data-tab="rf">RF Devices</button>
+  </div>
+
+  <!-- Time Options -->
+  <div id="tab-time-options" class="tab-panel active space-y-6">
+
+    <!-- Court options -->
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Court Time Options</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Label</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Minutes</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Price</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for opt in court_options %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3 font-medium text-gray-900">{{ opt.label }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ opt.duration_minutes }}</td>
+            <td class="px-4 py-3 font-semibold text-teal-700">{{ currency }}{{ opt.price|int }}</td>
+            <td class="px-4 py-3">
+              {% if opt.is_active %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right space-x-1">
+              <form method="post" action="/admin/time-option/{{ opt.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-teal-600 hover:text-teal-800 px-2 py-1 rounded hover:bg-teal-50 transition-colors">Toggle</button>
+              </form>
+              <form method="post" action="/admin/time-option/{{ opt.id }}/delete" class="inline" onsubmit="return confirm('Delete this option?')">
+                <button class="text-xs font-medium text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/time-option/add" class="flex flex-wrap gap-2 items-end">
+          <input type="hidden" name="type" value="court">
+          <input name="label" placeholder="Label" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          <input name="duration_minutes" type="number" placeholder="Minutes" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-28 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          <input name="price" type="number" step="0.01" placeholder="Price" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-28 bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">Add Court Option</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Racket options -->
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Racket Time Options</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Label</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Minutes</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Price</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for opt in racket_options %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3 font-medium text-gray-900">{{ opt.label }}</td>
+            <td class="px-4 py-3 text-gray-600">{{ opt.duration_minutes }}</td>
+            <td class="px-4 py-3 font-semibold text-amber-700">{{ currency }}{{ opt.price|int }}</td>
+            <td class="px-4 py-3">
+              {% if opt.is_active %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right space-x-1">
+              <form method="post" action="/admin/time-option/{{ opt.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-amber-600 hover:text-amber-800 px-2 py-1 rounded hover:bg-amber-50 transition-colors">Toggle</button>
+              </form>
+              <form method="post" action="/admin/time-option/{{ opt.id }}/delete" class="inline" onsubmit="return confirm('Delete this option?')">
+                <button class="text-xs font-medium text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/time-option/add" class="flex flex-wrap gap-2 items-end">
+          <input type="hidden" name="type" value="racket">
+          <input name="label" placeholder="Label" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+          <input name="duration_minutes" type="number" placeholder="Minutes" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-28 bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+          <input name="price" type="number" step="0.01" placeholder="Price" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-28 bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+          <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors">Add Racket Option</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Promotions -->
+  <div id="tab-promos" class="tab-panel space-y-6">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Promotions</h3>
+        <p class="text-xs text-gray-500 mt-1">Applied when a rental starts within the daily window (and optional date/day rules).</p>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Type</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Window</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Benefit</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for p in promos %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3">
+              <div class="font-medium text-gray-900">{{ p.name }}</div>
+              {% if p.description %}<div class="text-xs text-gray-500 mt-0.5">{{ p.description }}</div>{% endif %}
+            </td>
+            <td class="px-4 py-3 text-gray-600 capitalize">{{ p.rental_type }}</td>
+            <td class="px-4 py-3 text-gray-600 font-mono text-xs">{{ p.window_start }}–{{ p.window_end }}</td>
+            <td class="px-4 py-3 text-gray-700 text-xs">
+              {% if p.promo_kind == 'bonus_minutes' %}+{{ p.bonus_minutes }} min{% else %}{{ p.discount_percent|int }}% off{% endif %}
+              {% if p.days_of_week %}<span class="text-gray-400 block">Days: {{ p.days_of_week }}</span>{% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% if p.is_active %}
+              <span class="inline-flex text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="inline-flex text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right space-x-1">
+              <button type="button" onclick="openEditPromo({{ p.id }})" class="text-xs font-medium text-gray-700 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100">Edit</button>
+              <form method="post" action="/admin/promo/{{ p.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-violet-600 hover:text-violet-800 px-2 py-1 rounded hover:bg-violet-50">Toggle</button>
+              </form>
+              <form method="post" action="/admin/promo/{{ p.id }}/delete" class="inline" onsubmit="return confirm('Delete this promotion?')">
+                <button type="text-xs font-medium text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="px-6 py-8 text-center text-gray-400 text-sm">No promotions yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/promo/add" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <input name="name" placeholder="Promo name" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="description" placeholder="Description (shown on dashboard)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white md:col-span-2">
+          <select name="rental_type" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="court">Court</option>
+            <option value="racket">Racket</option>
+          </select>
+          <select name="promo_kind" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="bonus_minutes">Bonus time (minutes)</option>
+            <option value="discount_percent">Discount (%)</option>
+          </select>
+          <select name="time_option_id" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">Any time option</option>
+            <optgroup label="Court">
+              {% for opt in court_options %}<option value="{{ opt.id }}">{{ opt.label }}</option>{% endfor %}
+            </optgroup>
+            <optgroup label="Racket">
+              {% for opt in racket_options %}<option value="{{ opt.id }}">{{ opt.label }}</option>{% endfor %}
+            </optgroup>
+          </select>
+          <input name="window_start" placeholder="Start (07:00)" value="07:00" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="window_end" placeholder="End (12:00)" value="12:00" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="bonus_minutes" type="number" placeholder="Bonus minutes" value="60" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="discount_percent" type="number" step="0.1" placeholder="Discount %" value="0" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="days_of_week" placeholder="Days (0=Mon…6=Sun, empty=all)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <input name="priority" type="number" placeholder="Priority" value="0" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <button type="submit" class="md:col-span-3 bg-violet-600 hover:bg-violet-700 text-white rounded-lg px-4 py-2 text-sm font-medium">Add Promotion</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit promotion modal -->
+  <div id="modal-edit-promo" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white">
+        <h2 class="text-base font-bold text-gray-900">Edit Promotion</h2>
+        <button type="button" onclick="closeEditPromo()" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="form-edit-promo" method="post" class="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <input name="name" id="edit-promo-name" placeholder="Promo name" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white md:col-span-2">
+        <input name="description" id="edit-promo-description" placeholder="Description" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white md:col-span-2">
+        <select name="rental_type" id="edit-promo-rental-type" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="court">Court</option>
+          <option value="racket">Racket</option>
+        </select>
+        <select name="promo_kind" id="edit-promo-kind" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+          <option value="bonus_minutes">Bonus time (minutes)</option>
+          <option value="discount_percent">Discount (%)</option>
+        </select>
+        <select name="time_option_id" id="edit-promo-time-option" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white md:col-span-2">
+          <option value="">Any time option</option>
+          <optgroup label="Court">
+            {% for opt in court_options %}<option value="{{ opt.id }}">{{ opt.label }}</option>{% endfor %}
+          </optgroup>
+          <optgroup label="Racket">
+            {% for opt in racket_options %}<option value="{{ opt.id }}">{{ opt.label }}</option>{% endfor %}
+          </optgroup>
+        </select>
+        <input name="window_start" id="edit-promo-window-start" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <input name="window_end" id="edit-promo-window-end" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <input name="bonus_minutes" id="edit-promo-bonus" type="number" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <input name="discount_percent" id="edit-promo-discount" type="number" step="0.1" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <input name="days_of_week" id="edit-promo-days" placeholder="Days (0=Mon…6=Sun)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <input name="priority" id="edit-promo-priority" type="number" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <label class="flex items-center gap-2 md:col-span-2 text-sm text-gray-700">
+          <input type="checkbox" id="edit-promo-active" name="is_active" value="true" class="w-4 h-4 accent-violet-600" checked>
+          Active (available to cashiers when within window)
+        </label>
+        <div class="md:col-span-2 flex gap-3 pt-2">
+          <button type="button" onclick="closeEditPromo()" class="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+          <button type="submit" class="flex-1 bg-violet-600 hover:bg-violet-700 text-white py-2.5 rounded-lg text-sm font-semibold">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Rackets -->
+  <div id="tab-rackets" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Racket Inventory</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">RF ID</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for r in rackets %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3 font-medium text-gray-900">{{ r.name }}</td>
+            <td class="px-4 py-3 text-gray-500 font-mono text-xs">{{ r.rf_chip_id or '—' }}</td>
+            <td class="px-4 py-3">
+              {% if r.status == 'available' %}
+              <span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Available</span>
+              {% elif r.status == 'damaged' %}
+              <span class="text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">Damaged</span>
+              {% else %}
+              <span class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full capitalize">{{ r.status }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% if r.is_active %}
+              <span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 space-x-1">
+              <form method="post" action="/admin/racket/{{ r.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100 transition-colors">Toggle</button>
+              </form>
+              <form method="post" action="/admin/racket/{{ r.id }}/status" class="inline">
+                <input type="hidden" name="status" value="damaged">
+                <button class="text-xs font-medium text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">Damage</button>
+              </form>
+              <form method="post" action="/admin/racket/{{ r.id }}/status" class="inline">
+                <input type="hidden" name="status" value="available">
+                <button class="text-xs font-medium text-emerald-600 hover:text-emerald-800 px-2 py-1 rounded hover:bg-emerald-50 transition-colors">Available</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/racket/add" class="flex flex-wrap gap-2">
+          <input name="name" placeholder="Racket name" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none flex-1 min-w-36">
+          <input name="rf_chip_id" placeholder="RF Chip ID (optional)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none flex-1 min-w-36">
+          <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add Racket</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Courts -->
+  <div id="tab-courts" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Court Inventory</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Name</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Active</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for c in courts %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3 font-medium text-gray-900">{{ c.name }}</td>
+            <td class="px-4 py-3 text-gray-500">{{ c.description or '—' }}</td>
+            <td class="px-4 py-3">
+              {% if c.is_active %}
+              <span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3 text-right">
+              <form method="post" action="/admin/court/{{ c.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-teal-600 hover:text-teal-800 px-2 py-1 rounded hover:bg-teal-50 transition-colors">Toggle</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/court/add" class="flex flex-wrap gap-2">
+          <input name="name" placeholder="Court name" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          <input name="description" placeholder="Description (optional)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none flex-1 min-w-36">
+          <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add Court</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Users -->
+  <div id="tab-users" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">User Accounts</h3>
+      </div>
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Username</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Role</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Reset Password</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for u in users %}
+          <tr class="hover:bg-gray-50 transition-colors">
+            <td class="px-6 py-3">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">{{ u.username[0]|upper }}</div>
+                <span class="font-medium text-gray-900">{{ u.username }}</span>
+                {% if u.id == user.id %}<span class="text-xs text-gray-400">(you)</span>{% endif %}
+              </div>
+            </td>
+            <td class="px-4 py-3">
+              {% if u.role == 'admin' %}
+              <span class="text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full capitalize">{{ u.role }}</span>
+              {% else %}
+              <span class="text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full capitalize">{{ u.role }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              {% if u.id != user.id %}
+              <form method="post" action="/admin/user/{{ u.id }}/reset-password" class="flex gap-2">
+                <input name="password" type="password" placeholder="New password" required class="border border-gray-200 rounded-lg px-3 py-1.5 text-xs bg-white focus:ring-2 focus:ring-gray-400 focus:border-gray-400 outline-none">
+                <button class="text-xs font-medium bg-gray-800 hover:bg-gray-900 text-white px-3 py-1.5 rounded-lg transition-colors">Reset</button>
+              </form>
+              {% else %}
+              <span class="text-xs text-gray-400">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <form method="post" action="/admin/user/add" class="flex flex-wrap gap-2 items-end">
+          <input name="username" placeholder="Username" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none">
+          <input name="password" type="password" placeholder="Password" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none">
+          <select name="role" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-gray-500 focus:border-gray-500 outline-none">
+            <option value="cashier">Cashier</option>
+            <option value="admin">Admin</option>
+          </select>
+          <button type="submit" class="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add User</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Audit Log -->
+  <div id="tab-logs" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Audit Log</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-gray-50 border-b border-gray-100 text-left">
+              <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">Time</th>
+              <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Event</th>
+              <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Description</th>
+              <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">User</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for log in logs %}
+            <tr class="hover:bg-gray-50 transition-colors">
+              <td class="px-6 py-3 text-gray-500 whitespace-nowrap text-xs">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              <td class="px-4 py-3"><span class="font-mono text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{{ log.event_type }}</span></td>
+              <td class="px-4 py-3 text-gray-700">{{ log.description }}</td>
+              <td class="px-4 py-3 text-gray-500 text-xs">{{ log.user_id or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Camera stub -->
+  <div id="tab-camera" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center text-4xl mx-auto mb-4">📷</div>
+      <h3 class="text-base font-bold text-gray-900 mb-1">Camera Integration</h3>
+      <span class="inline-block bg-gray-100 text-gray-500 text-xs font-semibold px-3 py-1 rounded-full mb-4">Coming Soon</span>
+      <p class="text-gray-500 text-sm mb-6 max-w-sm mx-auto">AI-powered court presence detection will be available in a future update.</p>
+      <label class="inline-flex items-center gap-3 opacity-40 cursor-not-allowed">
+        <input type="checkbox" disabled class="w-4 h-4">
+        <span class="text-sm text-gray-600">Enable Camera Monitoring</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- RF stub -->
+  <div id="tab-rf" class="tab-panel">
+    <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+      <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center text-4xl mx-auto mb-4">📡</div>
+      <h3 class="text-base font-bold text-gray-900 mb-1">RF Device Integration</h3>
+      <span class="inline-block bg-gray-100 text-gray-500 text-xs font-semibold px-3 py-1 rounded-full mb-4">Coming Soon</span>
+      <p class="text-gray-500 text-sm mb-6 max-w-sm mx-auto">RF chip tracking for rackets will be available in a future update.</p>
+      <label class="inline-flex items-center gap-3 opacity-40 cursor-not-allowed">
+        <input type="checkbox" disabled class="w-4 h-4">
+        <span class="text-sm text-gray-600">Enable RF Tracking</span>
+      </label>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="application/json" id="promos-edit-data">{{ promos_edit_json | tojson }}</script>
+<script>
+  const PROMOS_EDIT_DATA = JSON.parse(document.getElementById('promos-edit-data').textContent);
+
+  function activateTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    const panel = document.getElementById('tab-' + tabId);
+    if (panel) panel.classList.add('active');
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+  });
+
+  const urlTab = new URLSearchParams(window.location.search).get('tab');
+  if (urlTab) activateTab(urlTab);
+
+  const editModal = document.getElementById('modal-edit-promo');
+  const editForm = document.getElementById('form-edit-promo');
+
+  function openEditPromo(id) {
+    const promo = PROMOS_EDIT_DATA.find(p => p.id === id);
+    if (!promo) return;
+    editForm.action = '/admin/promo/' + id + '/edit';
+    document.getElementById('edit-promo-name').value = promo.name;
+    document.getElementById('edit-promo-description').value = promo.description;
+    document.getElementById('edit-promo-rental-type').value = promo.rental_type;
+    document.getElementById('edit-promo-kind').value = promo.promo_kind;
+    document.getElementById('edit-promo-time-option').value = promo.time_option_id === '' ? '' : String(promo.time_option_id);
+    document.getElementById('edit-promo-window-start').value = promo.window_start;
+    document.getElementById('edit-promo-window-end').value = promo.window_end;
+    document.getElementById('edit-promo-bonus').value = promo.bonus_minutes;
+    document.getElementById('edit-promo-discount').value = promo.discount_percent;
+    document.getElementById('edit-promo-days').value = promo.days_of_week;
+    document.getElementById('edit-promo-priority').value = promo.priority;
+    document.getElementById('edit-promo-active').checked = promo.is_active;
+    activateTab('promos');
+    editModal.classList.remove('hidden');
+  }
+
+  function closeEditPromo() {
+    editModal.classList.add('hidden');
+  }
+
+  editModal?.addEventListener('click', (e) => {
+    if (e.target === editModal) closeEditPromo();
+  });
+
+  const editPromoId = new URLSearchParams(window.location.search).get('edit_promo');
+  if (editPromoId) openEditPromo(parseInt(editPromoId, 10));
+</script>
+{% endblock %}

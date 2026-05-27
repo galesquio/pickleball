@@ -1,0 +1,164 @@
+{% set court_promo_hints = court_promo_hints or {} %}
+{% set racket_promo_hints = racket_promo_hints or {} %}
+
+<!-- Rent Court Modal -->
+<div id="modal-rent-court" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <h2 class="text-base font-bold text-gray-900">Rent Court</h2>
+      <button onclick="closeModal('modal-rent-court')" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="form-rent-court" class="px-6 py-5 space-y-4">
+      <input type="hidden" name="court_id" id="rent-court-id">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Court</label>
+        <select id="rent-court-select" name="court_id" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+          {% for c in available_courts %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Customer Name</label>
+        <input type="text" name="customer_name" required placeholder="Enter customer name"
+          class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Time Option</label>
+        <div class="space-y-2">
+          {% for opt in court_options %}
+          {% set hint = court_promo_hints.get(opt.id) %}
+          <label class="flex items-center justify-between p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition-colors {% if hint %}ring-1 ring-violet-300 bg-violet-50/30{% endif %}">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <input type="radio" name="time_option_id" value="{{ opt.id }}" {% if loop.first %}checked{% endif %} required class="accent-teal-600 w-4 h-4 shrink-0">
+              <div class="min-w-0">
+                <span class="text-sm font-medium text-gray-800">{{ opt.label }}</span>
+                {% if hint %}
+                <span class="block text-[11px] font-semibold text-violet-700 mt-0.5">🎉 {{ hint.name }} — {{ hint.summary }}</span>
+                <span class="block text-[11px] text-violet-600 mt-0.5">{{ hint.duration_label }} play · pay {{ currency }}{{ hint.effective_price|int }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="text-right shrink-0 ml-2">
+              {% if hint and hint.has_discount %}
+              <span class="block text-xs text-gray-400 line-through">{{ currency }}{{ hint.original_price|int }}</span>
+              <span class="text-sm font-bold text-violet-700">{{ currency }}{{ hint.effective_price|int }}</span>
+              {% elif hint %}
+              <span class="text-sm font-bold text-violet-700">{{ currency }}{{ hint.effective_price|int }}</span>
+              {% else %}
+              <span class="text-sm font-bold text-teal-700">{{ currency }}{{ opt.price|int }}</span>
+              {% endif %}
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="closeModal('modal-rent-court')" class="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+        <button type="submit" class="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Confirm Rental</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Rent Racket Modal -->
+<div id="modal-rent-racket" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <h2 class="text-base font-bold text-gray-900">Rent Racket</h2>
+      <button onclick="closeModal('modal-rent-racket')" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="form-rent-racket" class="px-6 py-5 space-y-4">
+      <input type="hidden" name="racket_id" id="rent-racket-id">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Racket</label>
+        <select id="rent-racket-select" name="racket_id" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+          {% for r in available_rackets %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Customer Name</label>
+        <input type="text" name="customer_name" required placeholder="Enter customer name"
+          class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Time Option</label>
+        <div class="space-y-2">
+          {% for opt in racket_options %}
+          {% set hint = racket_promo_hints.get(opt.id) %}
+          <label class="flex items-center justify-between p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 transition-colors {% if hint %}ring-1 ring-violet-300 bg-violet-50/30{% endif %}">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <input type="radio" name="time_option_id" value="{{ opt.id }}" {% if loop.first %}checked{% endif %} required class="accent-amber-500 w-4 h-4 shrink-0">
+              <div class="min-w-0">
+                <span class="text-sm font-medium text-gray-800">{{ opt.label }}</span>
+                {% if hint %}
+                <span class="block text-[11px] font-semibold text-violet-700 mt-0.5">🎉 {{ hint.name }} — {{ hint.summary }}</span>
+                <span class="block text-[11px] text-violet-600 mt-0.5">{{ hint.duration_label }} · pay {{ currency }}{{ hint.effective_price|int }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="text-right shrink-0 ml-2">
+              {% if hint and hint.has_discount %}
+              <span class="block text-xs text-gray-400 line-through">{{ currency }}{{ hint.original_price|int }}</span>
+              <span class="text-sm font-bold text-violet-700">{{ currency }}{{ hint.effective_price|int }}</span>
+              {% elif hint %}
+              <span class="text-sm font-bold text-violet-700">{{ currency }}{{ hint.effective_price|int }}</span>
+              {% else %}
+              <span class="text-sm font-bold text-amber-700">{{ currency }}{{ opt.price|int }}</span>
+              {% endif %}
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="closeModal('modal-rent-racket')" class="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+        <button type="submit" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Confirm Rental</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Swap Racket Modal -->
+<div id="modal-swap-racket" class="hidden fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <h2 class="text-base font-bold text-gray-900">Swap Racket</h2>
+      <button onclick="closeModal('modal-swap-racket')" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="px-6 pt-4 pb-1">
+      <div class="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+        <svg class="w-4 h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Customer: <strong id="swap-customer" class="ml-1"></strong> — timer continues
+      </div>
+    </div>
+    <form id="form-swap-racket" class="px-6 py-4 space-y-4">
+      <input type="hidden" name="rental_id" id="swap-rental-id">
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">New Racket</label>
+        <select name="new_racket_id" id="swap-racket-select" required class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none">
+          {% for r in available_rackets %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Reason for Swap</label>
+        <textarea name="reason" required rows="3" placeholder="e.g. Damaged grip"
+          class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none resize-none"></textarea>
+      </div>
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="closeModal('modal-swap-racket')" class="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+        <button type="submit" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Confirm Swap</button>
+      </div>
+    </form>
+  </div>
+</div>

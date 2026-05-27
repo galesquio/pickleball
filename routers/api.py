@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session, joinedload
 from auth import require_user
 from database import get_db
 from models import Court, CourtRental, Racket, RacketRental, RentalTimeOption
-from schemas import CompleteRentalRequest, CourtRentRequest, RacketRentRequest, RacketSwapRequest
+from schemas import (
+    CompleteRentalRequest,
+    CourtRentRequest,
+    RacketRentRequest,
+    RacketSwapRequest,
+    RecordPaymentRequest,
+)
 from promo_service import active_promos_for_type, promo_hints_for_options
 from services import (
     complete_court_rental,
@@ -20,8 +26,14 @@ from services import (
     create_court_rental,
     create_racket_rental,
     preview_court_completion,
+    preview_court_payment,
     preview_racket_completion,
+    preview_racket_payment,
     racket_status_payload,
+    record_court_rental_payment,
+    record_racket_rental_payment,
+    rental_amount_billed,
+    rental_balance_due,
     rental_total_amount,
     swap_racket,
 )
@@ -61,9 +73,20 @@ def api_rent_court(request: Request, body: CourtRentRequest, db: Session = Depen
     user = require_user(request, db)
     try:
         rental = create_court_rental(
-            db, body.court_id, body.time_option_id, body.customer_name, user
+            db,
+            body.court_id,
+            body.time_option_id,
+            body.customer_name,
+            user,
+            body.payment_received,
         )
-        return {"success": True, "rental_id": rental.id}
+        return {
+            "success": True,
+            "rental_id": rental.id,
+            "amount_billed": rental.amount_billed,
+            "amount_paid": rental.amount_paid,
+            "balance_due": rental_balance_due(rental),
+        }
     except ValueError as e:
         return _error(str(e))
 
@@ -73,9 +96,20 @@ def api_rent_racket(request: Request, body: RacketRentRequest, db: Session = Dep
     user = require_user(request, db)
     try:
         rental = create_racket_rental(
-            db, body.racket_id, body.time_option_id, body.customer_name, user
+            db,
+            body.racket_id,
+            body.time_option_id,
+            body.customer_name,
+            user,
+            body.payment_received,
         )
-        return {"success": True, "rental_id": rental.id}
+        return {
+            "success": True,
+            "rental_id": rental.id,
+            "amount_billed": rental.amount_billed,
+            "amount_paid": rental.amount_paid,
+            "balance_due": rental_balance_due(rental),
+        }
     except ValueError as e:
         return _error(str(e))
 
@@ -86,6 +120,64 @@ def api_swap_racket(request: Request, body: RacketSwapRequest, db: Session = Dep
     try:
         rental = swap_racket(db, body.rental_id, body.new_racket_id, body.reason, user)
         return {"success": True, "rental_id": rental.id}
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.get("/payment/court/{rental_id}/preview")
+def api_preview_payment_court(rental_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request, db)
+    try:
+        return preview_court_payment(db, rental_id)
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.get("/payment/racket/{rental_id}/preview")
+def api_preview_payment_racket(rental_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request, db)
+    try:
+        return preview_racket_payment(db, rental_id)
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.post("/payment/court/{rental_id}")
+def api_payment_court(
+    rental_id: int,
+    request: Request,
+    body: RecordPaymentRequest,
+    db: Session = Depends(get_db),
+):
+    user = require_user(request, db)
+    try:
+        rental = record_court_rental_payment(db, rental_id, user, body.payment_received)
+        return {
+            "success": True,
+            "amount_billed": rental.amount_billed,
+            "amount_paid": rental.amount_paid,
+            "balance_due": rental_balance_due(rental),
+        }
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.post("/payment/racket/{rental_id}")
+def api_payment_racket(
+    rental_id: int,
+    request: Request,
+    body: RecordPaymentRequest,
+    db: Session = Depends(get_db),
+):
+    user = require_user(request, db)
+    try:
+        rental = record_racket_rental_payment(db, rental_id, user, body.payment_received)
+        return {
+            "success": True,
+            "amount_billed": rental.amount_billed,
+            "amount_paid": rental.amount_paid,
+            "balance_due": rental_balance_due(rental),
+        }
     except ValueError as e:
         return _error(str(e))
 
@@ -174,7 +266,7 @@ def api_sales_summary(
     racket_total = 0.0
     if type in ("all", "court"):
         court_base = (
-            court_q.with_entities(func.coalesce(func.sum(CourtRental.amount_paid), 0)).scalar() or 0
+            court_q.with_entities(func.coalesce(func.sum(CourtRental.amount_billed), 0)).scalar() or 0
         )
         court_overtime = (
             court_q.with_entities(func.coalesce(func.sum(CourtRental.overtime_charge), 0)).scalar()
@@ -183,7 +275,7 @@ def api_sales_summary(
         court_total = court_base + court_overtime
     if type in ("all", "racket"):
         racket_base = (
-            racket_q.with_entities(func.coalesce(func.sum(RacketRental.amount_paid), 0)).scalar()
+            racket_q.with_entities(func.coalesce(func.sum(RacketRental.amount_billed), 0)).scalar()
             or 0
         )
         racket_overtime = (
@@ -250,7 +342,9 @@ def api_sales_transactions(
                     "customer": r.customer_name,
                     "duration": duration,
                     "amount": total,
-                    "base_amount": r.amount_paid,
+                    "base_amount": rental_amount_billed(r),
+                    "amount_paid": float(r.amount_paid or 0),
+                    "balance_due": rental_balance_due(r) if r.status == "active" else 0,
                     "overtime_charge": overtime,
                     "checkout_payment": float(r.checkout_payment or 0),
                     "checkout_change": float(r.checkout_change or 0),
@@ -288,7 +382,9 @@ def api_sales_transactions(
                     "customer": r.customer_name,
                     "duration": duration,
                     "amount": total,
-                    "base_amount": r.amount_paid,
+                    "base_amount": rental_amount_billed(r),
+                    "amount_paid": float(r.amount_paid or 0),
+                    "balance_due": rental_balance_due(r) if r.status == "active" else 0,
                     "overtime_charge": overtime,
                     "checkout_payment": float(r.checkout_payment or 0),
                     "checkout_change": float(r.checkout_change or 0),
@@ -350,7 +446,8 @@ def api_sales_export(
                     r.customer_name,
                     r.time_option.label if r.time_option else "",
                     rental_total_amount(r),
-                    r.amount_paid,
+                    rental_amount_billed(r),
+                    float(r.amount_paid or 0),
                     float(r.overtime_charge or 0),
                     float(r.checkout_payment or 0),
                     float(r.checkout_change or 0),
@@ -383,7 +480,8 @@ def api_sales_export(
                     r.customer_name,
                     r.time_option.label if r.time_option else "",
                     rental_total_amount(r),
-                    r.amount_paid,
+                    rental_amount_billed(r),
+                    float(r.amount_paid or 0),
                     float(r.overtime_charge or 0),
                     float(r.checkout_payment or 0),
                     float(r.checkout_change or 0),
@@ -405,7 +503,8 @@ def api_sales_export(
             "Customer",
             "Duration",
             "Total",
-            "Base",
+            "Billed",
+            "Collected",
             "Overtime",
             "Paid at checkout",
             "Change",

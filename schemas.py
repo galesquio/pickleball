@@ -8,12 +8,14 @@ class CourtRentRequest(BaseModel):
     court_id: int
     customer_name: str = Field(min_length=1, max_length=128)
     time_option_id: int
+    payment_received: float = Field(ge=0, default=0)
 
 
 class RacketRentRequest(BaseModel):
     racket_id: int
     customer_name: str = Field(min_length=1, max_length=128)
     time_option_id: int
+    payment_received: float = Field(ge=0, default=0)
 
 
 class RacketSwapRequest(BaseModel):
@@ -24,6 +26,10 @@ class RacketSwapRequest(BaseModel):
 
 class CompleteRentalRequest(BaseModel):
     payment_received: float = Field(ge=0, default=0)
+
+
+class RecordPaymentRequest(BaseModel):
+    payment_received: float = Field(gt=0)
 
 
 class TimeOptionCreate(BaseModel):
@@ -85,7 +91,9 @@ class RentalInfo(BaseModel):
     ends_at: datetime
     time_remaining_seconds: int
     time_option_label: str
+    amount_billed: float
     amount_paid: float
+    balance_due: float
 
     class Config:
         from_attributes = True

@@ -14,7 +14,12 @@ from database import RESOURCE_DIR, get_db
 from models import Court, Racket, RacketRental, RentalTimeOption, User
 from promo_service import active_promos_for_type, promo_hints_for_options
 from overtime_service import get_settings, rental_timing_payload
-from services import get_active_court_rental, get_active_racket_rental
+from services import (
+    get_active_court_rental,
+    get_active_racket_rental,
+    rental_amount_billed,
+    rental_balance_due,
+)
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory=str(RESOURCE_DIR / "templates"))
@@ -91,6 +96,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 "time_remaining": timing["time_remaining_seconds"] if timing else 0,
                 "timing_state": timing["timing_state"] if timing else "ok",
                 "excess_minutes": timing["excess_minutes"] if timing else 0,
+                "payment_billed": rental_amount_billed(rental) if rental else 0,
+                "payment_paid": float(rental.amount_paid or 0) if rental else 0,
+                "payment_balance": rental_balance_due(rental) if rental else 0,
             }
         )
 
@@ -112,6 +120,9 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 "time_remaining": timing["time_remaining_seconds"] if timing else 0,
                 "timing_state": timing["timing_state"] if timing else "ok",
                 "excess_minutes": timing["excess_minutes"] if timing else 0,
+                "payment_billed": rental_amount_billed(rental) if rental else 0,
+                "payment_paid": float(rental.amount_paid or 0) if rental else 0,
+                "payment_balance": rental_balance_due(rental) if rental else 0,
             }
         )
 

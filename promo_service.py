@@ -100,7 +100,7 @@ def compute_rental_terms(
     option: RentalTimeOption,
     promo: Optional[Promo],
 ) -> tuple[int, float, int]:
-    """Returns (total_duration_minutes, amount_paid, bonus_minutes)."""
+    """Returns (total_duration_minutes, amount_billed, bonus_minutes)."""
     duration = option.duration_minutes
     price = option.price
     bonus = 0

@@ -105,11 +105,14 @@ def migrate_db():
             ("racket_rentals", "checkout_payment", "REAL DEFAULT 0"),
             ("racket_rentals", "checkout_change", "REAL DEFAULT 0"),
         ]
+        amount_billed_migrated: list[str] = []
         for table, column, ddl in [
             ("court_rentals", "promo_id", "INTEGER"),
             ("court_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
+            ("court_rentals", "amount_billed", "REAL"),
             ("racket_rentals", "promo_id", "INTEGER"),
             ("racket_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
+            ("racket_rentals", "amount_billed", "REAL"),
             *rental_completion_cols,
         ]:
             if table not in tables:
@@ -117,6 +120,25 @@ def migrate_db():
             cols = {c["name"] for c in insp.get_columns(table)}
             if column not in cols:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                if column == "amount_billed":
+                    amount_billed_migrated.append(table)
+
+        for table in amount_billed_migrated:
+            conn.execute(
+                text(
+                    f"UPDATE {table} SET amount_billed = amount_paid "
+                    "WHERE amount_billed IS NULL"
+                )
+            )
+            conn.execute(
+                text(
+                    f"UPDATE {table} SET amount_paid = amount_billed + COALESCE(checkout_payment, 0) "
+                    "WHERE status IN ('completed', 'swapped')"
+                )
+            )
+            conn.execute(
+                text(f"UPDATE {table} SET amount_paid = 0 WHERE status = 'active'")
+            )
 
 
 def init_db():
@@ -134,5 +156,4 @@ def init_db():
     )
 
     Base.metadata.create_all(bind=engine)
-    if _is_sqlite:
-        migrate_db()
+    migrate_db()

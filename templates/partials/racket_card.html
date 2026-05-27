@@ -59,7 +59,14 @@
         <div class="countdown font-mono text-lg font-bold text-amber-700 tracking-wide leading-none" data-seconds="{{ card.time_remaining }}">--:--:--</div>
         <div class="excess-label hidden text-[11px] font-semibold text-red-600 mt-0.5"></div>
       </div>
-      <div class="text-[11px] text-gray-400 shrink-0 ends-label">ends {{ card.rental.ends_at.strftime('%H:%M') }}</div>
+      <div class="text-right shrink-0">
+        <div class="text-[11px] text-gray-400 ends-label">ends {{ card.rental.ends_at.strftime('%H:%M') }}</div>
+        {% if card.payment_balance > 0 %}
+        <div class="text-[11px] font-semibold text-amber-700 mt-0.5">bal {{ currency }}{{ card.payment_balance|int }}</div>
+        {% else %}
+        <div class="text-[11px] font-semibold text-emerald-600 mt-0.5">paid</div>
+        {% endif %}
+      </div>
       {% else %}
       <div class="font-mono text-lg font-bold leading-none invisible select-none" aria-hidden="true">00:00:00</div>
       <div class="text-[11px] text-gray-400 shrink-0 invisible select-none" aria-hidden="true">ends 00:00</div>
@@ -75,6 +82,12 @@
       Rent Racket
     </button>
     {% elif card.status == 'rented' %}
+    {% if card.payment_balance > 0 %}
+    <button onclick="openRecordPaymentModal('racket', {{ card.rental.id }})"
+      class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
+      Pay
+    </button>
+    {% endif %}
     <button onclick="openSwapModal({{ card.rental.id }}, '{{ card.rental.customer_name }}', {{ card.time_remaining }})"
       class="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
       Swap

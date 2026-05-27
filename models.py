@@ -100,7 +100,8 @@ class CourtRental(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     ends_at = Column(DateTime, nullable=False)
     status = Column(String(16), default="active")  # active | completed | cancelled
-    amount_paid = Column(Float, nullable=False)
+    amount_billed = Column(Float, nullable=False)
+    amount_paid = Column(Float, nullable=False, default=0)
     bonus_minutes = Column(Integer, default=0)
     completed_at = Column(DateTime, nullable=True)
     overtime_minutes = Column(Integer, default=0)
@@ -128,7 +129,8 @@ class RacketRental(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     ends_at = Column(DateTime, nullable=False)
     status = Column(String(16), default="active")  # active | completed | swapped | cancelled
-    amount_paid = Column(Float, nullable=False)
+    amount_billed = Column(Float, nullable=False)
+    amount_paid = Column(Float, nullable=False, default=0)
     bonus_minutes = Column(Integer, default=0)
     completed_at = Column(DateTime, nullable=True)
     overtime_minutes = Column(Integer, default=0)

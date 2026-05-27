@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Deploy pickleball to Render via the public API.
+"""Deploy pickleball to Render via the public API (SQLite by default).
 
 Requires:
-  set RENDER_API_KEY=rnd_...   (https://dashboard.render.com/u/settings#api-keys)
+  set RENDER_API_KEY=rnd_...   (from CLI `render login` or dashboard API keys)
 
 Usage:
-  python scripts/deploy_render.py
+  python scripts/deploy_render.py              # SQLite (no Postgres)
+  python scripts/deploy_render.py --postgres   # optional Postgres instead
   python scripts/deploy_render.py --dry-run
 """
 
@@ -53,7 +54,6 @@ def first_owner_id(key: str) -> str:
     owners = api("GET", "/owners", key)
     if not owners:
         raise SystemExit("No Render workspaces found on this account.")
-    # API returns list of { owner: { id, ... }, ... }
     item = owners[0]
     owner = item.get("owner") or item
     return owner["id"]
@@ -73,17 +73,64 @@ def wait_postgres_ready(key: str, postgres_id: str, timeout: int = 900) -> dict:
     raise SystemExit(f"Timed out waiting for Postgres {postgres_id}")
 
 
-def connection_string(pg: dict) -> str:
-    for key in ("connectionString", "externalConnectionString", "internalConnectionString"):
-        val = pg.get(key)
+def connection_string(key: str, postgres_id: str, pg: dict) -> str:
+    info = api("GET", f"/postgres/{postgres_id}/connection-info", key)
+    conn = info.get("connectionInfo") or info
+    for field in (
+        "internalConnectionString",
+        "connectionString",
+        "externalConnectionString",
+    ):
+        val = conn.get(field)
         if val:
             return val
     raise SystemExit("Postgres is available but no connection string was returned.")
 
 
+def find_web_service(key: str) -> dict | None:
+    for svc in api("GET", "/services", key) or []:
+        s = svc.get("service") or svc
+        if s.get("name") == WEB_NAME and s.get("type") == "web_service":
+            return s
+    return None
+
+
+def web_env_vars_sqlite(pb_secret: str, data_dir: str | None = None) -> list[dict]:
+    env = [
+        {"key": "PYTHON_VERSION", "value": "3.12.7"},
+        {"key": "RENDER", "value": "true"},
+        {"key": "PB_SECRET_KEY", "value": pb_secret},
+    ]
+    if data_dir:
+        env.append({"key": "DATA_DIR", "value": data_dir})
+    return env
+
+
+def web_service_details() -> dict:
+    return {
+        "runtime": "python",
+        "plan": "free",
+        "healthCheckPath": "/login",
+        "envSpecificDetails": {
+            "buildCommand": "pip install -r requirements.txt",
+            "startCommand": "uvicorn app:create_app --factory --host 0.0.0.0 --port $PORT",
+        },
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy pickleball to Render")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions only")
+    parser.add_argument(
+        "--postgres",
+        action="store_true",
+        help="Use Render PostgreSQL instead of SQLite",
+    )
+    parser.add_argument(
+        "--data-dir",
+        default="",
+        help="DATA_DIR for SQLite file (e.g. /var/data with a persistent disk)",
+    )
     args = parser.parse_args()
 
     key = os.environ.get("RENDER_API_KEY", "").strip()
@@ -95,36 +142,19 @@ def main() -> None:
 
     owner_id = first_owner_id(key)
     pb_secret = secrets.token_urlsafe(32)
+    data_dir = args.data_dir.strip() or None
+
+    env_vars = web_env_vars_sqlite(pb_secret, data_dir)
+    if args.postgres:
+        env_vars.append({"key": "DATABASE_URL", "value": "<postgres-connection-string>"})
 
     plan = {
+        "mode": "postgres" if args.postgres else "sqlite",
         "owner_id": owner_id,
-        "postgres": {
-            "name": DB_NAME,
-            "plan": "free",
-            "version": "16",
-            "databaseName": "pickleball",
-            "databaseUser": "pickleball",
-        },
+        "data_dir": data_dir,
         "web": {
-            "type": "web_service",
-            "name": WEB_NAME,
-            "repo": REPO,
-            "branch": BRANCH,
-            "autoDeploy": "yes",
-            "envVars": [
-                {"key": "PYTHON_VERSION", "value": "3.12.7"},
-                {"key": "RENDER", "value": "true"},
-                {"key": "PB_SECRET_KEY", "value": pb_secret},
-            ],
-            "serviceDetails": {
-                "runtime": "python",
-                "plan": "free",
-                "healthCheckPath": "/login",
-                "envSpecificDetails": {
-                    "buildCommand": "pip install -r requirements.txt",
-                    "startCommand": "uvicorn app:create_app --factory --host 0.0.0.0 --port $PORT",
-                },
-            },
+            "envVars": env_vars,
+            "serviceDetails": web_service_details(),
         },
     }
 
@@ -132,46 +162,48 @@ def main() -> None:
         print(json.dumps(plan, indent=2))
         return
 
-    # Reuse existing resources if present
-    existing_pg = None
-    existing_web = None
-    for svc in api("GET", "/services", key) or []:
-        s = svc.get("service") or svc
-        if s.get("name") == WEB_NAME:
-            existing_web = s
-        if s.get("type") == "postgres" and s.get("name") == DB_NAME:
-            existing_pg = s
+    existing_web = find_web_service(key)
 
-    for row in api("GET", "/postgres", key) or []:
-        pg = row.get("postgres") or row
-        if pg.get("name") == DB_NAME:
-            existing_pg = pg
-
-    if existing_pg:
-        pg_id = existing_pg["id"]
-        print(f"Using existing Postgres: {DB_NAME} ({pg_id})")
-        pg = wait_postgres_ready(key, pg_id, timeout=60)
+    if args.postgres:
+        existing_pg = None
+        for row in api("GET", "/postgres", key) or []:
+            pg = row.get("postgres") or row
+            if pg.get("name") == DB_NAME:
+                existing_pg = pg
+                break
+        if existing_pg:
+            pg_id = existing_pg["id"]
+            print(f"Using existing Postgres: {DB_NAME} ({pg_id})")
+            pg = wait_postgres_ready(key, pg_id, timeout=60)
+        else:
+            print(f"Creating Postgres: {DB_NAME} ...")
+            created = api(
+                "POST",
+                "/postgres",
+                key,
+                {
+                    "name": DB_NAME,
+                    "ownerId": owner_id,
+                    "plan": "free",
+                    "version": "16",
+                    "databaseName": "pickleball",
+                    "databaseUser": "pickleball",
+                },
+            )
+            pg_row = created.get("postgres") or created
+            pg_id = pg_row["id"]
+            pg = wait_postgres_ready(key, pg_id)
+        db_url = connection_string(key, pg_id, pg)
+        env_vars = [
+            {"key": "PYTHON_VERSION", "value": "3.12.7"},
+            {"key": "RENDER", "value": "true"},
+            {"key": "PB_SECRET_KEY", "value": pb_secret},
+            {"key": "DATABASE_URL", "value": db_url},
+        ]
     else:
-        print(f"Creating Postgres: {DB_NAME} ...")
-        created = api(
-            "POST",
-            "/postgres",
-            key,
-            {
-                "name": DB_NAME,
-                "ownerId": owner_id,
-                "plan": "free",
-                "version": "16",
-                "databaseName": "pickleball",
-                "databaseUser": "pickleball",
-            },
-        )
-        pg_row = created.get("postgres") or created
-        pg_id = pg_row["id"]
-        print(f"  id={pg_id}, waiting until available ...")
-        pg = wait_postgres_ready(key, pg_id)
+        print("Deploying with SQLite (pickleball.db on the service filesystem).")
+        print("Note: on the free plan, the DB is reset when you redeploy.")
 
-    db_url = connection_string(pg)
     web_body = {
         "type": "web_service",
         "name": WEB_NAME,
@@ -179,13 +211,8 @@ def main() -> None:
         "repo": REPO,
         "branch": BRANCH,
         "autoDeploy": "yes",
-        "envVars": [
-            {"key": "PYTHON_VERSION", "value": "3.12.7"},
-            {"key": "RENDER", "value": "true"},
-            {"key": "PB_SECRET_KEY", "value": pb_secret},
-            {"key": "DATABASE_URL", "value": db_url},
-        ],
-        "serviceDetails": plan["web"]["serviceDetails"],
+        "envVars": env_vars,
+        "serviceDetails": web_service_details(),
     }
 
     if existing_web:
@@ -199,14 +226,13 @@ def main() -> None:
         web = created.get("service") or created
         web_id = web["id"]
 
-    # Poll for URL
     for _ in range(60):
         row = api("GET", f"/services/{web_id}", key)
         svc = row.get("service") or row
         url = svc.get("serviceDetails", {}).get("url") or svc.get("url")
         if url:
             print(f"\nDeployed. Open: {url}")
-            print("Default login (if DB was empty): admin / admin123 — change immediately.")
+            print("Default login (if DB was empty): admin / admin123 - change immediately.")
             return
         time.sleep(5)
 

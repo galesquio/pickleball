@@ -16,7 +16,10 @@ else:
 def _normalize_database_url(url: str) -> str:
     """Render and some hosts use postgres://; SQLAlchemy 2.x expects postgresql://."""
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://") :]
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and "sslmode=" not in url and ".render.com" in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}sslmode=require"
     return url
 
 

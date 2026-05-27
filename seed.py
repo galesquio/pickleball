@@ -134,3 +134,23 @@ def print_default_credentials():
     print("  Admin:   admin / admin123")
     print("  Cashier: cashier1 / cashier123")
     print("=" * 60)
+
+
+def notify_default_credentials():
+    """Show default login credentials on first run (console or dialog)."""
+    import sys
+
+    if getattr(sys, "frozen", False):
+        try:
+            import ctypes
+
+            msg = (
+                "Default credentials (change after login):\n\n"
+                "Admin:   admin / admin123\n"
+                "Cashier: cashier1 / cashier123"
+            )
+            ctypes.windll.user32.MessageBoxW(0, msg, "Pickleball - First Run", 0x40)
+        except Exception:
+            print_default_credentials()
+    else:
+        print_default_credentials()

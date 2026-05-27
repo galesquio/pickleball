@@ -32,13 +32,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     init_db()
     from database import SessionLocal
-    from seed import print_default_credentials, seed_database
+    from seed import notify_default_credentials, seed_database
 
     db = SessionLocal()
     try:
         admin_created = seed_database(db)
         if admin_created:
-            print_default_credentials()
+            notify_default_credentials()
     finally:
         db.close()
 

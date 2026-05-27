@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -11,12 +12,41 @@ else:
     APP_DIR = Path(__file__).resolve().parent
     RESOURCE_DIR = APP_DIR
 
-DB_PATH = APP_DIR / "pickleball.db"
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
+
+def _normalize_database_url(url: str) -> str:
+    """Render and some hosts use postgres://; SQLAlchemy 2.x expects postgresql://."""
+    if url.startswith("postgres://"):
+        return "postgresql://" + url[len("postgres://") :]
+    return url
+
+
+def _sqlite_database_url() -> str:
+    data_dir = os.getenv("DATA_DIR", "").strip()
+    if data_dir:
+        db_dir = Path(data_dir)
+    elif Path("/var/data").is_dir():
+        db_dir = Path("/var/data")
+    else:
+        db_dir = APP_DIR
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "pickleball.db"
+    return f"sqlite:///{db_path.as_posix()}"
+
+
+def resolve_database_url() -> str:
+    explicit = os.getenv("DATABASE_URL", "").strip()
+    if explicit:
+        return _normalize_database_url(explicit)
+    return _sqlite_database_url()
+
+
+SQLALCHEMY_DATABASE_URL = resolve_database_url()
+_is_sqlite = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
+    pool_pre_ping=not _is_sqlite,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -45,11 +75,39 @@ def migrate_db():
             insp = inspect(engine)
             tables = set(insp.get_table_names())
 
+        if "system_settings" not in tables:
+            from models import SystemSettings  # noqa: F401
+
+            SystemSettings.__table__.create(bind=conn)
+            conn.execute(
+                text(
+                    "INSERT INTO system_settings (id, court_overtime_rate, racket_overtime_rate, "
+                    "overtime_grace_minutes, warning_minutes) VALUES (1, 50.0, 20.0, 10, 15)"
+                )
+            )
+            insp = inspect(engine)
+            tables = set(insp.get_table_names())
+
+        rental_completion_cols = [
+            ("court_rentals", "completed_at", "DATETIME"),
+            ("court_rentals", "overtime_minutes", "INTEGER DEFAULT 0"),
+            ("court_rentals", "overtime_hours_charged", "INTEGER DEFAULT 0"),
+            ("court_rentals", "overtime_charge", "REAL DEFAULT 0"),
+            ("court_rentals", "checkout_payment", "REAL DEFAULT 0"),
+            ("court_rentals", "checkout_change", "REAL DEFAULT 0"),
+            ("racket_rentals", "completed_at", "DATETIME"),
+            ("racket_rentals", "overtime_minutes", "INTEGER DEFAULT 0"),
+            ("racket_rentals", "overtime_hours_charged", "INTEGER DEFAULT 0"),
+            ("racket_rentals", "overtime_charge", "REAL DEFAULT 0"),
+            ("racket_rentals", "checkout_payment", "REAL DEFAULT 0"),
+            ("racket_rentals", "checkout_change", "REAL DEFAULT 0"),
+        ]
         for table, column, ddl in [
             ("court_rentals", "promo_id", "INTEGER"),
             ("court_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
             ("racket_rentals", "promo_id", "INTEGER"),
             ("racket_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
+            *rental_completion_cols,
         ]:
             if table not in tables:
                 continue
@@ -68,8 +126,10 @@ def init_db():
         RacketSwap,
         RentalTimeOption,
         SystemLog,
+        SystemSettings,
         User,
     )
 
     Base.metadata.create_all(bind=engine)
-    migrate_db()
+    if _is_sqlite:
+        migrate_db()

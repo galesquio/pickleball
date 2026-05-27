@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Pickleball{% endblock %}
 {% block content %}
+<script>document.body.dataset.warningMinutes = '{{ warning_minutes }}';</script>
 
 {% set courts_available = court_cards | selectattr('status', 'equalto', 'available') | list | length %}
 {% set courts_rented = court_cards | selectattr('status', 'equalto', 'rented') | list | length %}

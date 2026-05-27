@@ -3,11 +3,18 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
-from auth import SESSION_COOKIE, create_session_token, get_current_user, require_user
+from auth import (
+    SESSION_COOKIE,
+    create_session_token,
+    get_current_user,
+    require_user,
+    session_cookie_kwargs,
+)
 from database import RESOURCE_DIR, get_db
 from models import Court, Racket, RacketRental, RentalTimeOption, User
 from promo_service import active_promos_for_type, promo_hints_for_options
-from services import get_active_court_rental, get_active_racket_rental, time_remaining_seconds
+from overtime_service import get_settings, rental_timing_payload
+from services import get_active_court_rental, get_active_racket_rental
 
 router = APIRouter(tags=["dashboard"])
 templates = Jinja2Templates(directory=str(RESOURCE_DIR / "templates"))
@@ -49,14 +56,14 @@ def login_submit(
         )
     token = create_session_token(user)
     response = RedirectResponse("/dashboard", status_code=302)
-    response.set_cookie(SESSION_COOKIE, token, httponly=True, max_age=60 * 60 * 24 * 7)
+    response.set_cookie(SESSION_COOKIE, token, **session_cookie_kwargs())
     return response
 
 
 @router.get("/logout")
 def logout():
     response = RedirectResponse("/login", status_code=302)
-    response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(SESSION_COOKIE, **session_cookie_kwargs())
     return response
 
 
@@ -68,18 +75,22 @@ def root():
 @router.get("/dashboard", response_class=HTMLResponse)
 def dashboard(request: Request, db: Session = Depends(get_db)):
     user = require_user(request, db)
+    settings = get_settings(db)
     courts = db.query(Court).filter(Court.is_active.is_(True)).order_by(Court.name).all()
     rackets = db.query(Racket).filter(Racket.is_active.is_(True)).order_by(Racket.name).all()
 
     court_cards = []
     for court in courts:
         rental = get_active_court_rental(db, court.id)
+        timing = rental_timing_payload(rental.ends_at, settings) if rental else None
         court_cards.append(
             {
                 "court": court,
                 "status": "rented" if rental else "available",
                 "rental": rental,
-                "time_remaining": time_remaining_seconds(rental.ends_at) if rental else 0,
+                "time_remaining": timing["time_remaining_seconds"] if timing else 0,
+                "timing_state": timing["timing_state"] if timing else "ok",
+                "excess_minutes": timing["excess_minutes"] if timing else 0,
             }
         )
 
@@ -92,12 +103,15 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             status = "rented"
         else:
             status = "available"
+        timing = rental_timing_payload(rental.ends_at, settings) if rental else None
         racket_cards.append(
             {
                 "racket": racket,
                 "status": status,
                 "rental": rental,
-                "time_remaining": time_remaining_seconds(rental.ends_at) if rental else 0,
+                "time_remaining": timing["time_remaining_seconds"] if timing else 0,
+                "timing_state": timing["timing_state"] if timing else "ok",
+                "excess_minutes": timing["excess_minutes"] if timing else 0,
             }
         )
 
@@ -142,6 +156,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         available_courts=available_courts,
         available_rackets=available_rackets,
         active_racket_rentals=active_rentals,
+        warning_minutes=int(settings.warning_minutes or 15),
     )
     ctx.pop("request", None)
     return templates.TemplateResponse(request, "dashboard.html", ctx)

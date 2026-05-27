@@ -22,6 +22,10 @@ class RacketSwapRequest(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class CompleteRentalRequest(BaseModel):
+    payment_received: float = Field(ge=0, default=0)
+
+
 class TimeOptionCreate(BaseModel):
     type: str
     label: str

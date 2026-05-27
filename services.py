@@ -15,6 +15,12 @@ from models import (
     SystemLog,
     User,
 )
+from overtime_service import (
+    compute_overtime,
+    format_duration_minutes,
+    get_settings,
+    rental_timing_payload,
+)
 from promo_service import compute_rental_terms, find_best_promo, promo_summary
 
 
@@ -66,16 +72,28 @@ def get_active_racket_rental(db: Session, racket_id: int) -> Optional[RacketRent
     )
 
 
-def rental_to_dict(rental, rental_type: str) -> dict:
+def rental_total_amount(rental) -> float:
+    return float(rental.amount_paid or 0) + float(rental.overtime_charge or 0)
+
+
+def rental_to_dict(rental, rental_type: str, db: Session) -> dict:
     label = rental.time_option.label if rental.time_option else ""
     if getattr(rental, "bonus_minutes", 0):
         label = f"{label} (+{rental.bonus_minutes // 60}h bonus)" if rental.bonus_minutes >= 60 else f"{label} (+{rental.bonus_minutes}m bonus)"
     promo_name = rental.promo.name if getattr(rental, "promo", None) and rental.promo else ""
+    settings = get_settings(db)
+    timing = rental_timing_payload(rental.ends_at, settings)
+    preview = compute_overtime(rental.ends_at, rental_type, settings)
     return {
         "rental_id": rental.id,
         "customer": rental.customer_name,
         "ends_at": rental.ends_at.isoformat(),
-        "time_remaining_seconds": time_remaining_seconds(rental.ends_at),
+        "time_remaining_seconds": timing["time_remaining_seconds"],
+        "timing_state": timing["timing_state"],
+        "excess_seconds": timing["excess_seconds"],
+        "excess_minutes": timing["excess_minutes"],
+        "excess_label": format_duration_minutes(timing["excess_minutes"]),
+        "estimated_overtime_charge": preview.overtime_charge,
         "time_option_label": label,
         "amount_paid": rental.amount_paid,
         "promo_name": promo_name,
@@ -91,7 +109,7 @@ def court_status_payload(db: Session, court: Court) -> dict:
         "name": court.name,
         "description": court.description,
         "status": status,
-        "rental": rental_to_dict(rental, "court") if rental else None,
+        "rental": rental_to_dict(rental, "court", db) if rental else None,
     }
     return payload
 
@@ -115,7 +133,7 @@ def racket_status_payload(db: Session, racket: Racket) -> dict:
         "name": racket.name,
         "rf_chip_id": racket.rf_chip_id,
         "status": status,
-        "rental": rental_to_dict(rental, "racket") if rental else None,
+        "rental": rental_to_dict(rental, "racket", db) if rental else None,
     }
     return payload
 
@@ -292,29 +310,112 @@ def swap_racket(
     return rental
 
 
-def complete_court_rental(db: Session, rental_id: int, user: User) -> CourtRental:
-    rental = db.query(CourtRental).filter(CourtRental.id == rental_id).first()
+def build_completion_preview(db: Session, rental, rental_type: str, item_name: str) -> dict:
+    settings = get_settings(db)
+    overtime = compute_overtime(rental.ends_at, rental_type, settings)
+    label = rental.time_option.label if rental.time_option else ""
+    amount_due_now = overtime.overtime_charge
+    return {
+        "rental_id": rental.id,
+        "rental_type": rental_type,
+        "item_name": item_name,
+        "customer": rental.customer_name,
+        "time_option_label": label,
+        "ends_at": rental.ends_at.isoformat(),
+        "base_amount_paid": float(rental.amount_paid),
+        "excess_minutes": overtime.excess_minutes,
+        "excess_label": format_duration_minutes(overtime.excess_minutes),
+        "grace_minutes": overtime.grace_minutes,
+        "overtime_hours_charged": overtime.overtime_hours_charged,
+        "rate_per_hour": overtime.rate_per_hour,
+        "overtime_charge": overtime.overtime_charge,
+        "amount_due_now": amount_due_now,
+        "total_revenue": float(rental.amount_paid) + overtime.overtime_charge,
+    }
+
+
+def _finalize_completion(
+    db: Session,
+    rental,
+    rental_type: str,
+    user: User,
+    payment_received: float,
+    item_name: str,
+    event_type: str,
+    entity_type: str,
+):
+    settings = get_settings(db)
+    completed_at = facility_now()
+    overtime = compute_overtime(rental.ends_at, rental_type, settings, completed_at)
+
+    amount_due = overtime.overtime_charge
+    if amount_due > 0 and payment_received < amount_due - 0.009:
+        raise ValueError(
+            f"Payment received ({payment_received:.2f}) is less than amount due ({amount_due:.2f})"
+        )
+
+    change = round(max(0.0, payment_received - amount_due), 2)
+    rental.completed_at = completed_at
+    rental.overtime_minutes = overtime.excess_minutes
+    rental.overtime_hours_charged = overtime.overtime_hours_charged
+    rental.overtime_charge = overtime.overtime_charge
+    rental.checkout_payment = round(payment_received, 2)
+    rental.checkout_change = change
+    rental.status = "completed"
+
+    total = rental_total_amount(rental)
+    overtime_note = ""
+    if overtime.has_charge:
+        overtime_note = (
+            f"; overtime {overtime.overtime_hours_charged}h @ {overtime.rate_per_hour:.0f} "
+            f"= {overtime.overtime_charge:.2f}, paid {payment_received:.2f}, change {change:.2f}"
+        )
+    log_event(
+        db,
+        event_type,
+        f"{item_name} rental #{rental.id} completed for {rental.customer_name} "
+        f"(total {total:.2f}{overtime_note})",
+        user.id,
+        entity_type,
+        rental.id,
+    )
+    return rental, overtime, change
+
+
+def complete_court_rental(
+    db: Session, rental_id: int, user: User, payment_received: float = 0.0
+) -> CourtRental:
+    rental = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court), joinedload(CourtRental.time_option))
+        .filter(CourtRental.id == rental_id)
+        .first()
+    )
     if not rental:
         raise ValueError("Rental not found")
     if rental.status != "active":
         raise ValueError("Rental is not active")
-    rental.status = "completed"
-    log_event(
+    item_name = rental.court.name if rental.court else f"Court #{rental.court_id}"
+    _finalize_completion(
         db,
+        rental,
+        "court",
+        user,
+        payment_received,
+        item_name,
         "COURT_COMPLETED",
-        f"Court rental #{rental_id} completed",
-        user.id,
         "court_rental",
-        rental.id,
     )
     db.commit()
     return rental
 
 
-def complete_racket_rental(db: Session, rental_id: int, user: User) -> RacketRental:
+def complete_racket_rental(
+    db: Session, rental_id: int, user: User, payment_received: float = 0.0
+) -> RacketRental:
     rental = (
         db.query(RacketRental)
-        .options(joinedload(RacketRental.racket))
+        .options(joinedload(RacketRental.racket), joinedload(RacketRental.time_option))
         .filter(RacketRental.id == rental_id)
         .first()
     )
@@ -322,16 +423,44 @@ def complete_racket_rental(db: Session, rental_id: int, user: User) -> RacketRen
         raise ValueError("Rental not found")
     if rental.status != "active":
         raise ValueError("Rental is not active")
-    rental.status = "completed"
     if rental.racket:
         rental.racket.status = "available"
-    log_event(
+    item_name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
+    _finalize_completion(
         db,
+        rental,
+        "racket",
+        user,
+        payment_received,
+        item_name,
         "RACKET_COMPLETED",
-        f"Racket rental #{rental_id} completed",
-        user.id,
         "racket_rental",
-        rental.id,
     )
     db.commit()
     return rental
+
+
+def preview_court_completion(db: Session, rental_id: int) -> dict:
+    rental = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court), joinedload(CourtRental.time_option))
+        .filter(CourtRental.id == rental_id, CourtRental.status == "active")
+        .first()
+    )
+    if not rental:
+        raise ValueError("Active rental not found")
+    name = rental.court.name if rental.court else f"Court #{rental.court_id}"
+    return build_completion_preview(db, rental, "court", name)
+
+
+def preview_racket_completion(db: Session, rental_id: int) -> dict:
+    rental = (
+        db.query(RacketRental)
+        .options(joinedload(RacketRental.racket), joinedload(RacketRental.time_option))
+        .filter(RacketRental.id == rental_id, RacketRental.status == "active")
+        .first()
+    )
+    if not rental:
+        raise ValueError("Active rental not found")
+    name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
+    return build_completion_preview(db, rental, "racket", name)

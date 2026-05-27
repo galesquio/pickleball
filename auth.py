@@ -6,13 +6,27 @@ from fastapi import HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy.orm import Session
 
+from config import IS_PRODUCTION
 from models import User
 
 SESSION_COOKIE = "pb_session"
 SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+_DEFAULT_SECRET = "pickleball-dev-secret-change-in-production"
 
-_secret = os.environ.get("PB_SECRET_KEY", "pickleball-dev-secret-change-in-production")
+_secret = os.environ.get("PB_SECRET_KEY", _DEFAULT_SECRET)
+if IS_PRODUCTION and _secret == _DEFAULT_SECRET:
+    raise RuntimeError("Set PB_SECRET_KEY in production (Render can generate this for you).")
 _serializer = URLSafeTimedSerializer(_secret)
+
+
+def session_cookie_kwargs() -> dict:
+    """Cookie flags for login/logout (Secure on HTTPS hosts like Render)."""
+    return {
+        "httponly": True,
+        "max_age": SESSION_MAX_AGE,
+        "samesite": "lax",
+        "secure": IS_PRODUCTION,
+    }
 
 
 def hash_password(password: str) -> str:

@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from auth import hash_password, require_role
 from database import RESOURCE_DIR, get_db
-from models import Court, Promo, Racket, RentalTimeOption, SystemLog, User
+from models import Court, Promo, Racket, RentalTimeOption, SystemLog, SystemSettings, User
+from overtime_service import ensure_settings
 from promo_service import PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT
 from services import log_event
 
@@ -104,6 +105,7 @@ def admin_panel(request: Request, db: Session = Depends(get_db)):
         .order_by(Promo.rental_type, Promo.priority.desc())
         .all()
     )
+    settings = ensure_settings(db)
     ctx = _ctx(
         request,
         user,
@@ -116,9 +118,39 @@ def admin_panel(request: Request, db: Session = Depends(get_db)):
         promos=promos,
         promos_edit_json=_promos_edit_json(promos),
         promo_kinds=[PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT],
+        settings=settings,
     )
     ctx.pop("request", None)
     return templates.TemplateResponse(request, "admin.html", ctx)
+
+
+@router.post("/settings/overtime")
+def save_overtime_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    court_overtime_rate: float = Form(...),
+    racket_overtime_rate: float = Form(...),
+    overtime_grace_minutes: int = Form(...),
+    warning_minutes: int = Form(...),
+):
+    user = require_role(request, db, "admin")
+    settings = ensure_settings(db)
+    settings.court_overtime_rate = max(0.0, court_overtime_rate)
+    settings.racket_overtime_rate = max(0.0, racket_overtime_rate)
+    settings.overtime_grace_minutes = max(0, overtime_grace_minutes)
+    settings.warning_minutes = max(1, warning_minutes)
+    log_event(
+        db,
+        "SETTINGS_UPDATED",
+        (
+            f"Overtime: court ₱{settings.court_overtime_rate}/hr, "
+            f"racket ₱{settings.racket_overtime_rate}/hr, "
+            f"grace {settings.overtime_grace_minutes}m, warning {settings.warning_minutes}m"
+        ),
+        user.id,
+    )
+    db.commit()
+    return RedirectResponse("/admin?tab=overtime", status_code=302)
 
 
 @router.post("/time-option/add")

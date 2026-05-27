@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from auth import require_user
 from database import get_db
 from models import Court, CourtRental, Racket, RacketRental, RentalTimeOption
-from schemas import CourtRentRequest, RacketRentRequest, RacketSwapRequest
+from schemas import CompleteRentalRequest, CourtRentRequest, RacketRentRequest, RacketSwapRequest
 from promo_service import active_promos_for_type, promo_hints_for_options
 from services import (
     complete_court_rental,
@@ -19,7 +19,10 @@ from services import (
     court_status_payload,
     create_court_rental,
     create_racket_rental,
+    preview_court_completion,
+    preview_racket_completion,
     racket_status_payload,
+    rental_total_amount,
     swap_racket,
 )
 
@@ -87,22 +90,60 @@ def api_swap_racket(request: Request, body: RacketSwapRequest, db: Session = Dep
         return _error(str(e))
 
 
+@router.get("/complete/court/{rental_id}/preview")
+def api_preview_complete_court(rental_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request, db)
+    try:
+        return preview_court_completion(db, rental_id)
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.get("/complete/racket/{rental_id}/preview")
+def api_preview_complete_racket(rental_id: int, request: Request, db: Session = Depends(get_db)):
+    require_user(request, db)
+    try:
+        return preview_racket_completion(db, rental_id)
+    except ValueError as e:
+        return _error(str(e))
+
+
 @router.post("/complete/court/{rental_id}")
-def api_complete_court(rental_id: int, request: Request, db: Session = Depends(get_db)):
+def api_complete_court(
+    rental_id: int,
+    request: Request,
+    body: CompleteRentalRequest,
+    db: Session = Depends(get_db),
+):
     user = require_user(request, db)
     try:
-        complete_court_rental(db, rental_id, user)
-        return {"success": True}
+        rental = complete_court_rental(db, rental_id, user, body.payment_received)
+        return {
+            "success": True,
+            "overtime_charge": rental.overtime_charge,
+            "checkout_change": rental.checkout_change,
+            "total_revenue": rental_total_amount(rental),
+        }
     except ValueError as e:
         return _error(str(e))
 
 
 @router.post("/complete/racket/{rental_id}")
-def api_complete_racket(rental_id: int, request: Request, db: Session = Depends(get_db)):
+def api_complete_racket(
+    rental_id: int,
+    request: Request,
+    body: CompleteRentalRequest,
+    db: Session = Depends(get_db),
+):
     user = require_user(request, db)
     try:
-        complete_racket_rental(db, rental_id, user)
-        return {"success": True}
+        rental = complete_racket_rental(db, rental_id, user, body.payment_received)
+        return {
+            "success": True,
+            "overtime_charge": rental.overtime_charge,
+            "checkout_change": rental.checkout_change,
+            "total_revenue": rental_total_amount(rental),
+        }
     except ValueError as e:
         return _error(str(e))
 
@@ -132,15 +173,24 @@ def api_sales_summary(
     court_total = 0.0
     racket_total = 0.0
     if type in ("all", "court"):
-        court_total = (
-            court_q.with_entities(func.coalesce(func.sum(CourtRental.amount_paid), 0)).scalar()
+        court_base = (
+            court_q.with_entities(func.coalesce(func.sum(CourtRental.amount_paid), 0)).scalar() or 0
+        )
+        court_overtime = (
+            court_q.with_entities(func.coalesce(func.sum(CourtRental.overtime_charge), 0)).scalar()
             or 0
         )
+        court_total = court_base + court_overtime
     if type in ("all", "racket"):
-        racket_total = (
+        racket_base = (
             racket_q.with_entities(func.coalesce(func.sum(RacketRental.amount_paid), 0)).scalar()
             or 0
         )
+        racket_overtime = (
+            racket_q.with_entities(func.coalesce(func.sum(RacketRental.overtime_charge), 0)).scalar()
+            or 0
+        )
+        racket_total = racket_base + racket_overtime
 
     court_count = court_q.count() if type in ("all", "court") else 0
     racket_count = racket_q.count() if type in ("all", "racket") else 0
@@ -190,14 +240,20 @@ def api_sales_transactions(
             duration = r.time_option.label if r.time_option else ""
             if r.bonus_minutes:
                 duration = f"{duration} (+{r.bonus_minutes}m promo)"
+            total = rental_total_amount(r)
+            overtime = float(r.overtime_charge or 0)
             items.append(
                 {
-                    "datetime": r.created_at.isoformat(),
+                    "datetime": (r.completed_at or r.created_at).isoformat(),
                     "type": "court",
                     "item": r.court.name if r.court else "",
                     "customer": r.customer_name,
                     "duration": duration,
-                    "amount": r.amount_paid,
+                    "amount": total,
+                    "base_amount": r.amount_paid,
+                    "overtime_charge": overtime,
+                    "checkout_payment": float(r.checkout_payment or 0),
+                    "checkout_change": float(r.checkout_change or 0),
                     "cashier": r.cashier.username if r.cashier else "",
                     "status": r.status,
                 }
@@ -222,14 +278,20 @@ def api_sales_transactions(
             duration = r.time_option.label if r.time_option else ""
             if r.bonus_minutes:
                 duration = f"{duration} (+{r.bonus_minutes}m promo)"
+            total = rental_total_amount(r)
+            overtime = float(r.overtime_charge or 0)
             items.append(
                 {
-                    "datetime": r.created_at.isoformat(),
+                    "datetime": (r.completed_at or r.created_at).isoformat(),
                     "type": "racket",
                     "item": r.racket.name if r.racket else "",
                     "customer": r.customer_name,
                     "duration": duration,
-                    "amount": r.amount_paid,
+                    "amount": total,
+                    "base_amount": r.amount_paid,
+                    "overtime_charge": overtime,
+                    "checkout_payment": float(r.checkout_payment or 0),
+                    "checkout_change": float(r.checkout_change or 0),
                     "cashier": r.cashier.username if r.cashier else "",
                     "status": r.status,
                 }
@@ -282,12 +344,16 @@ def api_sales_export(
         for r in court_rentals:
             rows.append(
                 (
-                    r.created_at.isoformat(),
+                    (r.completed_at or r.created_at).isoformat(),
                     "Court",
                     r.court.name if r.court else "",
                     r.customer_name,
                     r.time_option.label if r.time_option else "",
+                    rental_total_amount(r),
                     r.amount_paid,
+                    float(r.overtime_charge or 0),
+                    float(r.checkout_payment or 0),
+                    float(r.checkout_change or 0),
                     r.cashier.username if r.cashier else "",
                     r.status,
                 )
@@ -311,12 +377,16 @@ def api_sales_export(
         for r in racket_rentals:
             rows.append(
                 (
-                    r.created_at.isoformat(),
+                    (r.completed_at or r.created_at).isoformat(),
                     "Racket",
                     r.racket.name if r.racket else "",
                     r.customer_name,
                     r.time_option.label if r.time_option else "",
+                    rental_total_amount(r),
                     r.amount_paid,
+                    float(r.overtime_charge or 0),
+                    float(r.checkout_payment or 0),
+                    float(r.checkout_change or 0),
                     r.cashier.username if r.cashier else "",
                     r.status,
                 )
@@ -328,7 +398,20 @@ def api_sales_export(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
-        ["Date/Time", "Type", "Item", "Customer", "Duration", "Amount", "Cashier", "Status"]
+        [
+            "Date/Time",
+            "Type",
+            "Item",
+            "Customer",
+            "Duration",
+            "Total",
+            "Base",
+            "Overtime",
+            "Paid at checkout",
+            "Change",
+            "Cashier",
+            "Status",
+        ]
     )
     writer.writerows(rows)
     writer.writerow([])

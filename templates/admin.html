@@ -28,6 +28,7 @@
   <!-- Tabs -->
   <div class="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
     <button class="tab-btn active" data-tab="time-options">Time Options</button>
+    <button class="tab-btn" data-tab="overtime">Overtime & Alerts</button>
     <button class="tab-btn" data-tab="promos">Promotions</button>
     <button class="tab-btn" data-tab="rackets">Rackets</button>
     <button class="tab-btn" data-tab="courts">Courts</button>
@@ -144,6 +145,53 @@
   </div>
 
   <!-- Promotions -->
+  <!-- Overtime settings -->
+  <div id="tab-overtime" class="tab-panel space-y-6">
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden max-w-2xl">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Overtime &amp; dashboard alerts</h3>
+        <p class="text-xs text-gray-500 mt-1">Rates apply per full hour after the grace period. Different rates for courts and rackets.</p>
+      </div>
+      <form method="post" action="/admin/settings/overtime" class="px-6 py-5 space-y-4">
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Court overtime ({{ currency }}/hour)</label>
+            <input name="court_overtime_rate" type="number" step="0.01" min="0" required
+              value="{{ settings.court_overtime_rate|int }}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Racket overtime ({{ currency }}/hour)</label>
+            <input name="racket_overtime_rate" type="number" step="0.01" min="0" required
+              value="{{ settings.racket_overtime_rate|int }}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+          </div>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Grace period (minutes)</label>
+            <input name="overtime_grace_minutes" type="number" min="0" required
+              value="{{ settings.overtime_grace_minutes }}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 outline-none">
+            <p class="text-[11px] text-gray-500 mt-1">No overtime charge if late by this many minutes or less.</p>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Warning threshold (minutes)</label>
+            <input name="warning_minutes" type="number" min="1" required
+              value="{{ settings.warning_minutes }}"
+              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 outline-none">
+            <p class="text-[11px] text-gray-500 mt-1">Highlight cards on the dashboard when time remaining is at or below this.</p>
+          </div>
+        </div>
+        <div class="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-xs text-gray-600 space-y-1">
+          <p><strong>Example:</strong> Grace 10 min, court rate {{ currency }}50/hr — return 9 min late: no charge; 11 min late: 1 hour ({{ currency }}50); 65 min late: 2 hours ({{ currency }}100).</p>
+          <p>Checkout records base rental paid upfront plus any overtime collected at return.</p>
+        </div>
+        <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">Save settings</button>
+      </form>
+    </div>
+  </div>
+
   <div id="tab-promos" class="tab-panel space-y-6">
     <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div class="px-6 py-4 border-b border-gray-100">

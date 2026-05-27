@@ -1,0 +1,45 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploy: connect this repo in the Render dashboard and apply the blueprint,
+# or run `render blueprint apply` from the Render CLI.
+#
+# Default: free-tier web service + PostgreSQL (persistent data).
+# For SQLite on a persistent disk instead, remove the `databases` block and
+# `DATABASE_URL` env, uncomment `disk` below, and set plan to a tier that supports disks.
+
+services:
+  - type: web
+    name: pickleball
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /login
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: RENDER
+        value: "true"
+      - key: PB_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pickleball-db
+          property: connectionString
+      # Optional facility timezone (requires tzdata in requirements.txt)
+      # - key: PICKLEBALL_TIMEZONE
+      #   value: Asia/Manila
+    # Uncomment for SQLite on a mounted volume (paid plan required for disks):
+    # disk:
+    #   name: pickleball-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # envVars:
+    #   - key: DATA_DIR
+    #     value: /var/data
+
+databases:
+  - name: pickleball-db
+    plan: free
+    databaseName: pickleball
+    user: pickleball

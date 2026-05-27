@@ -1,6 +1,12 @@
 import os
 from datetime import datetime, timedelta, timezone
 
+# Set automatically on Render; use ENVIRONMENT=production elsewhere.
+IS_PRODUCTION = (
+    os.getenv("RENDER", "").lower() == "true"
+    or os.getenv("ENVIRONMENT", "").lower() == "production"
+)
+
 # Facility local time. Default UTC+8 (Philippines). Override with env vars:
 #   PICKLEBALL_UTC_OFFSET_HOURS=8
 #   PICKLEBALL_TIMEZONE=Asia/Manila  (needs tzdata package on Windows)

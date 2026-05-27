@@ -98,7 +98,8 @@
             <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Item</th>
             <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer</th>
             <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Duration</th>
-            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Overtime</th>
             <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cashier</th>
             <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
           </tr>
@@ -108,7 +109,7 @@
           <tr class="bg-gray-50 border-t border-gray-200">
             <td colspan="5" class="px-6 py-3 text-sm font-semibold text-gray-700 text-right">Total</td>
             <td id="transactions-total" class="px-4 py-3 text-sm font-bold text-gray-900">{{ currency }}0</td>
-            <td colspan="2"></td>
+            <td colspan="3"></td>
           </tr>
         </tfoot>
       </table>
@@ -174,6 +175,9 @@ async function loadTransactions() {
       ? `<span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">${item.status}</span>`
       : `<span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">${item.status}</span>`;
     const dt = new Date(item.datetime).toLocaleString();
+    const overtime = item.overtime_charge > 0
+      ? `<span class="text-red-700 font-semibold">${CURRENCY}${Math.round(item.overtime_charge)}</span>`
+      : '<span class="text-gray-400">—</span>';
     return `<tr class="hover:bg-gray-50 transition-colors">
       <td class="px-6 py-3 text-xs text-gray-500 whitespace-nowrap">${dt}</td>
       <td class="px-4 py-3">${badge}</td>
@@ -181,6 +185,7 @@ async function loadTransactions() {
       <td class="px-4 py-3 text-gray-700">${item.customer}</td>
       <td class="px-4 py-3 text-gray-600">${item.duration}</td>
       <td class="px-4 py-3 font-semibold text-gray-900">${CURRENCY}${Math.round(item.amount)}</td>
+      <td class="px-4 py-3 text-sm">${overtime}</td>
       <td class="px-4 py-3 text-gray-600">${item.cashier}</td>
       <td class="px-4 py-3">${statusBadge}</td>
     </tr>`;

@@ -1,7 +1,8 @@
-<div class="court-card bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden"
+<div class="court-card bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md transition-all overflow-hidden"
      data-court-id="{{ card.court.id }}"
      data-status="{{ card.status }}"
-     {% if card.rental %}data-rental-id="{{ card.rental.id }}" data-ends-at="{{ card.rental.ends_at.isoformat() }}"{% endif %}>
+     data-card-type="court"
+     {% if card.rental %}data-rental-id="{{ card.rental.id }}" data-ends-at="{{ card.rental.ends_at.isoformat() }}" data-timing-state="{{ card.timing_state }}" data-excess-minutes="{{ card.excess_minutes }}"{% endif %}>
 
   <!-- Top accent bar -->
   <div class="h-0.5 {% if card.status == 'available' %}bg-emerald-400{% else %}bg-red-400{% endif %}"></div>
@@ -47,8 +48,11 @@
     </div>
     <div class="flex items-baseline justify-between gap-2 pt-1.5 border-t border-gray-200">
       {% if card.status == 'rented' %}
-      <div class="countdown font-mono text-lg font-bold text-teal-700 tracking-wide leading-none" data-seconds="{{ card.time_remaining }}">--:--:--</div>
-      <div class="text-[11px] text-gray-400 shrink-0">ends {{ card.rental.ends_at.strftime('%H:%M') }}</div>
+      <div>
+        <div class="countdown font-mono text-lg font-bold text-teal-700 tracking-wide leading-none" data-seconds="{{ card.time_remaining }}">--:--:--</div>
+        <div class="excess-label hidden text-[11px] font-semibold text-red-600 mt-0.5"></div>
+      </div>
+      <div class="text-[11px] text-gray-400 shrink-0 ends-label">ends {{ card.rental.ends_at.strftime('%H:%M') }}</div>
       {% else %}
       <div class="font-mono text-lg font-bold leading-none invisible select-none" aria-hidden="true">00:00:00</div>
       <div class="text-[11px] text-gray-400 shrink-0 invisible select-none" aria-hidden="true">ends 00:00</div>
@@ -64,7 +68,7 @@
       Rent Court
     </button>
     {% else %}
-    <button onclick="completeCourt({{ card.rental.id }})"
+    <button onclick="openCompleteModal('court', {{ card.rental.id }})"
       class="w-full bg-gray-800 hover:bg-gray-900 text-white text-xs font-semibold py-1.5 rounded-lg transition-colors">
       Complete Rental
     </button>

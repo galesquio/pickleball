@@ -42,6 +42,16 @@ class Racket(Base):
     rentals = relationship("RacketRental", back_populates="racket")
 
 
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    court_overtime_rate = Column(Float, default=50.0)
+    racket_overtime_rate = Column(Float, default=20.0)
+    overtime_grace_minutes = Column(Integer, default=10)
+    warning_minutes = Column(Integer, default=15)
+
+
 class RentalTimeOption(Base):
     __tablename__ = "rental_time_options"
 
@@ -92,6 +102,12 @@ class CourtRental(Base):
     status = Column(String(16), default="active")  # active | completed | cancelled
     amount_paid = Column(Float, nullable=False)
     bonus_minutes = Column(Integer, default=0)
+    completed_at = Column(DateTime, nullable=True)
+    overtime_minutes = Column(Integer, default=0)
+    overtime_hours_charged = Column(Integer, default=0)
+    overtime_charge = Column(Float, default=0)
+    checkout_payment = Column(Float, default=0)
+    checkout_change = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     court = relationship("Court", back_populates="rentals")
@@ -114,6 +130,12 @@ class RacketRental(Base):
     status = Column(String(16), default="active")  # active | completed | swapped | cancelled
     amount_paid = Column(Float, nullable=False)
     bonus_minutes = Column(Integer, default=0)
+    completed_at = Column(DateTime, nullable=True)
+    overtime_minutes = Column(Integer, default=0)
+    overtime_hours_charged = Column(Integer, default=0)
+    overtime_charge = Column(Float, default=0)
+    checkout_payment = Column(Float, default=0)
+    checkout_change = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     racket = relationship("Racket", back_populates="rentals")

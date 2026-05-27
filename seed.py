@@ -1,12 +1,14 @@
 from sqlalchemy.orm import Session
 
 from auth import hash_password
-from models import Court, Promo, Racket, RentalTimeOption, User
+from models import Court, Promo, Racket, RentalTimeOption, SystemSettings, User
+from overtime_service import ensure_settings
 from promo_service import PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT
 
 
 def seed_database(db: Session) -> bool:
     """Seed default data. Returns True if admin was newly created."""
+    ensure_settings(db)
     admin_created = False
 
     if not db.query(User).filter(User.username == "admin").first():

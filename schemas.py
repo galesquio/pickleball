@@ -94,6 +94,18 @@ class LoginForm(BaseModel):
     password: str
 
 
+class MerchandiseSaleItemRequest(BaseModel):
+    product_id: int
+    quantity: int = Field(ge=1)
+
+
+class MerchandiseSaleRequest(BaseModel):
+    items: List[MerchandiseSaleItemRequest] = Field(min_length=1)
+    amount_paid: float = Field(ge=0)
+    customer_name: str = Field(default="", max_length=128)
+    notes: str = Field(default="", max_length=500)
+
+
 class RentalInfo(BaseModel):
     rental_id: int
     customer: str

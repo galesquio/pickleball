@@ -30,6 +30,7 @@
     <button class="tab-btn active" data-tab="time-options">Time Options</button>
     <button class="tab-btn" data-tab="overtime">Overtime & Alerts</button>
     <button class="tab-btn" data-tab="promos">Promotions</button>
+    <button class="tab-btn" data-tab="merchandise">Merchandise</button>
     <button class="tab-btn" data-tab="rackets">Rackets</button>
     <button class="tab-btn" data-tab="courts">Courts</button>
     <button class="tab-btn" data-tab="users">Users</button>
@@ -353,6 +354,126 @@
     </div>
   </div>
 
+  <!-- Merchandise -->
+  <div id="tab-merchandise" class="tab-panel space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-gray-500">Manage products, incoming stock, and damage write-offs.</p>
+      <a href="/inventory" class="text-sm font-medium text-violet-600 hover:text-violet-800">View full inventory →</a>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Product Catalog</h3>
+        <p class="text-xs text-gray-400 mt-0.5">Click column headers to sort</p>
+      </div>
+      <table id="merch-catalog-table" class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="name" data-sort-type="string">Name</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="category" data-sort-type="string">Category</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="price" data-sort-type="number">Price</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="stock" data-sort-type="number">Stock</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="active" data-sort-type="string">Active</th>
+            <th class="px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="merch-catalog-body">
+          {% for p in merchandise_products %}
+          <tr>
+            <td class="px-6 py-3" data-sort-value="{{ p.name }}">
+              <div class="font-medium text-gray-900">{{ p.name }}</div>
+              {% if p.sku %}<div class="text-xs text-gray-400 font-mono">{{ p.sku }}</div>{% endif %}
+            </td>
+            <td class="px-4 py-3 text-gray-600 capitalize" data-sort-value="{{ p.category }}">{{ p.category }}</td>
+            <td class="px-4 py-3 font-medium text-gray-900" data-sort-value="{{ p.unit_price }}">{{ currency }}{{ p.unit_price|int }}</td>
+            <td class="px-4 py-3" data-sort-value="{{ p.stock_quantity }}">
+              {% if p.stock_quantity <= 0 %}
+              <span class="text-xs font-medium text-red-700">{{ p.stock_quantity }}</span>
+              {% elif p.stock_quantity <= p.low_stock_threshold %}
+              <span class="text-xs font-medium text-amber-700">{{ p.stock_quantity }}</span>
+              {% else %}
+              <span class="font-medium text-gray-900">{{ p.stock_quantity }}</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3" data-sort-value="{{ 'active' if p.is_active else 'inactive' }}">
+              {% if p.is_active %}
+              <span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Active</span>
+              {% else %}
+              <span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="px-4 py-3">
+              <form method="post" action="/admin/merchandise/product/{{ p.id }}/toggle" class="inline">
+                <button class="text-xs font-medium text-gray-600 hover:text-gray-900 px-2 py-1 rounded hover:bg-gray-100">Toggle</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr class="empty-row"><td colspan="6" class="px-6 py-8 text-center text-gray-400">No products yet</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="px-6 py-4 bg-gray-50 border-t border-gray-100">
+        <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Add Product</h4>
+        <form method="post" action="/admin/merchandise/product/add" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          <input name="name" placeholder="Product name" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <select name="category" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+            {% for cat in merch_categories %}
+            <option value="{{ cat }}">{{ cat|capitalize }}</option>
+            {% endfor %}
+          </select>
+          <input name="unit_price" type="number" step="0.01" min="0" placeholder="Price (₱)" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <input name="initial_stock" type="number" min="0" value="0" placeholder="Initial stock" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <input name="sku" placeholder="SKU (optional)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <input name="cost_price" type="number" step="0.01" min="0" placeholder="Cost price (optional)" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <input name="low_stock_threshold" type="number" min="0" value="5" placeholder="Low stock alert" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+          <button type="submit" class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Add Product</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-emerald-50">
+          <h3 class="font-semibold text-emerald-900 text-sm">Stock In — Incoming Inventory</h3>
+        </div>
+        <form method="post" action="/admin/merchandise/stock-in" class="p-6 space-y-3">
+          <select name="product_id" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+            <option value="">Select product…</option>
+            {% for p in merchandise_products %}
+            <option value="{{ p.id }}">{{ p.name }} ({{ p.stock_quantity }} in stock)</option>
+            {% endfor %}
+          </select>
+          <input name="quantity" type="number" min="1" required placeholder="Quantity received" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+          <input name="unit_cost" type="number" step="0.01" min="0" placeholder="Unit cost (optional)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+          <input name="notes" placeholder="Notes (e.g. supplier delivery)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-emerald-500 outline-none">
+          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-lg text-sm font-semibold">Record Stock In</button>
+        </form>
+      </div>
+
+      <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-100 bg-red-50">
+          <h3 class="font-semibold text-red-900 text-sm">Stock Out — Damage / Loss</h3>
+        </div>
+        <form method="post" action="/admin/merchandise/stock-out" class="p-6 space-y-3">
+          <select name="product_id" required class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none">
+            <option value="">Select product…</option>
+            {% for p in merchandise_products %}
+            <option value="{{ p.id }}">{{ p.name }} ({{ p.stock_quantity }} in stock)</option>
+            {% endfor %}
+          </select>
+          <input name="quantity" type="number" min="1" required placeholder="Quantity to remove" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none">
+          <select name="transaction_type" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none">
+            <option value="damage">Damaged</option>
+            <option value="stock_out">Other stock out</option>
+          </select>
+          <input name="notes" placeholder="Reason (e.g. broken on shelf)" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-red-500 outline-none">
+          <button type="submit" class="w-full bg-red-600 hover:bg-red-700 text-white py-2.5 rounded-lg text-sm font-semibold">Record Stock Out</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Rackets -->
   <div id="tab-rackets" class="tab-panel">
     <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -585,9 +706,15 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/js/sortable_table.js"></script>
 <script type="application/json" id="promos-edit-data">{{ promos_edit_json | tojson }}</script>
 <script>
   const PROMOS_EDIT_DATA = JSON.parse(document.getElementById('promos-edit-data').textContent);
+
+  const merchCatalogTable = document.getElementById('merch-catalog-table');
+  if (merchCatalogTable) {
+    MerchTable.initSortableTable(merchCatalogTable, { key: 'name', dir: 'asc' });
+  }
 
   function activateTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(b => {

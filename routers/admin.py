@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 
 from auth import hash_password, require_role
 from database import RESOURCE_DIR, get_db
-from models import Court, Promo, Racket, RentalTimeOption, SystemLog, SystemSettings, User
+from models import Court, MerchandiseProduct, Promo, Racket, RentalTimeOption, SystemLog, SystemSettings, User
+from merchandise_service import MERCH_CATEGORIES, create_product, record_stock_in, record_stock_out, toggle_product_active, update_product
 from overtime_service import ensure_settings
 from promo_service import PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT
 from services import log_event
@@ -106,6 +107,9 @@ def admin_panel(request: Request, db: Session = Depends(get_db)):
         .all()
     )
     settings = ensure_settings(db)
+    merchandise_products = (
+        db.query(MerchandiseProduct).order_by(MerchandiseProduct.category, MerchandiseProduct.name).all()
+    )
     ctx = _ctx(
         request,
         user,
@@ -119,6 +123,8 @@ def admin_panel(request: Request, db: Session = Depends(get_db)):
         promos_edit_json=_promos_edit_json(promos),
         promo_kinds=[PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT],
         settings=settings,
+        merchandise_products=merchandise_products,
+        merch_categories=MERCH_CATEGORIES,
     )
     ctx.pop("request", None)
     return templates.TemplateResponse(request, "admin.html", ctx)
@@ -451,3 +457,113 @@ def mark_racket_available(racket_id: int, request: Request, db: Session = Depend
         log_event(db, "RACKET_AVAILABLE", f"Marked {racket.name} available", user.id, "racket", racket.id)
         db.commit()
     return RedirectResponse("/dashboard", status_code=302)
+
+
+@router.post("/merchandise/product/add")
+def add_merchandise_product(
+    request: Request,
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    unit_price: float = Form(...),
+    category: str = Form("other"),
+    sku: str = Form(""),
+    initial_stock: int = Form(0),
+    low_stock_threshold: int = Form(5),
+    cost_price: Optional[float] = Form(None),
+):
+    user = require_role(request, db, "admin")
+    try:
+        create_product(
+            db,
+            user.id,
+            name,
+            unit_price,
+            category=category,
+            sku=sku,
+            initial_stock=max(0, initial_stock),
+            low_stock_threshold=low_stock_threshold,
+            cost_price=cost_price,
+        )
+        db.commit()
+    except ValueError as e:
+        log_event(db, "MERCH_ERROR", str(e), user.id)
+        db.commit()
+    return RedirectResponse("/admin?tab=merchandise", status_code=302)
+
+
+@router.post("/merchandise/product/{product_id}/toggle")
+def toggle_merchandise_product(product_id: int, request: Request, db: Session = Depends(get_db)):
+    user = require_role(request, db, "admin")
+    try:
+        toggle_product_active(db, product_id, user.id)
+        db.commit()
+    except ValueError:
+        pass
+    return RedirectResponse("/admin?tab=merchandise", status_code=302)
+
+
+@router.post("/merchandise/product/{product_id}/edit")
+def edit_merchandise_product(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    unit_price: float = Form(...),
+    category: str = Form("other"),
+    sku: str = Form(""),
+    low_stock_threshold: int = Form(5),
+    cost_price: Optional[float] = Form(None),
+):
+    user = require_role(request, db, "admin")
+    try:
+        update_product(
+            db,
+            product_id,
+            user.id,
+            name=name,
+            unit_price=unit_price,
+            category=category,
+            sku=sku,
+            low_stock_threshold=low_stock_threshold,
+            cost_price=cost_price,
+        )
+        db.commit()
+    except ValueError:
+        pass
+    return RedirectResponse("/admin?tab=merchandise", status_code=302)
+
+
+@router.post("/merchandise/stock-in")
+def merchandise_stock_in(
+    request: Request,
+    db: Session = Depends(get_db),
+    product_id: int = Form(...),
+    quantity: int = Form(...),
+    notes: str = Form(""),
+    unit_cost: Optional[float] = Form(None),
+):
+    user = require_role(request, db, "admin")
+    try:
+        record_stock_in(db, product_id, quantity, user.id, notes=notes, unit_cost=unit_cost)
+        db.commit()
+    except ValueError:
+        pass
+    return RedirectResponse("/admin?tab=merchandise", status_code=302)
+
+
+@router.post("/merchandise/stock-out")
+def merchandise_stock_out(
+    request: Request,
+    db: Session = Depends(get_db),
+    product_id: int = Form(...),
+    quantity: int = Form(...),
+    transaction_type: str = Form("damage"),
+    notes: str = Form(""),
+):
+    user = require_role(request, db, "admin")
+    try:
+        record_stock_out(db, product_id, quantity, user.id, transaction_type, notes=notes)
+        db.commit()
+    except ValueError:
+        pass
+    return RedirectResponse("/admin?tab=merchandise", status_code=302)

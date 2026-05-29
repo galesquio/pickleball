@@ -5,7 +5,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from auth import SESSION_COOKIE, get_current_user, read_session_token
 from database import RESOURCE_DIR, init_db
-from routers import admin, api, dashboard, sales
+from routers import admin, api, dashboard, merchandise, sales
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
 
     app.include_router(dashboard.router)
     app.include_router(admin.router)
+    app.include_router(merchandise.router)
     app.include_router(sales.router)
     app.include_router(api.router)
 

@@ -217,6 +217,24 @@ def migrate_db():
                         text(f"ALTER TABLE system_settings ADD COLUMN {column} {ddl}")
                     )
 
+        merch_tables = (
+            "merchandise_products",
+            "merchandise_inventory_transactions",
+            "merchandise_sales",
+            "merchandise_sale_items",
+        )
+        missing_merch = [name for name in merch_tables if name not in tables]
+        if missing_merch:
+            from models import (  # noqa: F401
+                MerchandiseInventoryTransaction,
+                MerchandiseProduct,
+                MerchandiseSale,
+                MerchandiseSaleItem,
+            )
+
+            for name in missing_merch:
+                Base.metadata.tables[name].create(bind=conn)
+
         for table in ("court_rentals", "racket_rentals"):
             if table not in tables:
                 continue
@@ -241,6 +259,10 @@ def init_db():
     from models import (  # noqa: F401
         Court,
         CourtRental,
+        MerchandiseInventoryTransaction,
+        MerchandiseProduct,
+        MerchandiseSale,
+        MerchandiseSaleItem,
         Promo,
         Racket,
         RacketRental,

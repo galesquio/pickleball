@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block title %}Inventory — Pickleball{% endblock %}
+{% block head %}
+<style>
+  .sortable-th { cursor: pointer; user-select: none; }
+  .sortable-th:hover { background-color: rgb(243 244 246); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="p-6 lg:p-8 max-w-screen-xl mx-auto w-full">
+
+  <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Inventory</h1>
+      <p class="text-gray-500 text-sm mt-0.5">Stock levels and in/out transaction history</p>
+    </div>
+    <a href="/admin?tab=merchandise"
+      class="bg-violet-600 hover:bg-violet-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+      Manage Products
+    </a>
+  </div>
+
+  <!-- Summary -->
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="bg-white border border-gray-200 rounded-xl p-4">
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Total SKUs</div>
+      <div id="stat-skus" class="text-2xl font-bold text-gray-900">—</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-4">
+      <div class="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Active</div>
+      <div id="stat-active" class="text-2xl font-bold text-gray-900">—</div>
+    </div>
+    <div class="bg-amber-50 border border-amber-100 rounded-xl p-4">
+      <div class="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1">Low Stock</div>
+      <div id="stat-low" class="text-2xl font-bold text-amber-800">—</div>
+    </div>
+    <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+      <div class="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-1">Stock In Today</div>
+      <div id="stat-stock-in" class="text-2xl font-bold text-emerald-800">—</div>
+    </div>
+  </div>
+
+  <!-- Stock table -->
+  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden mb-6">
+    <div class="px-6 py-4 border-b border-gray-100">
+      <h3 class="text-sm font-semibold text-gray-900">Current Stock</h3>
+      <p class="text-xs text-gray-400 mt-0.5">Click column headers to sort</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table id="stock-table" class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="sortable-th px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="product" data-sort-type="string">Product</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="category" data-sort-type="string">Category</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="price" data-sort-type="number">Price</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="stock" data-sort-type="number">Stock</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="status" data-sort-type="string">Status</th>
+          </tr>
+        </thead>
+        <tbody id="stock-body">
+          <tr class="empty-row"><td colspan="5" class="px-6 py-8 text-center text-gray-400 text-sm">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Transaction history -->
+  <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-100 space-y-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="mr-auto">
+          <h3 class="text-sm font-semibold text-gray-900">Transaction History</h3>
+          <p id="tx-range-label" class="text-xs text-gray-400 mt-0.5">Loading…</p>
+        </div>
+        <select id="filter-type" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm">
+          <option value="">All types</option>
+          <option value="stock_in">Stock In</option>
+          <option value="sale">Sale</option>
+          <option value="damage">Damage</option>
+          <option value="stock_out">Stock Out</option>
+        </select>
+        <select id="filter-product" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm min-w-36">
+          <option value="">All products</option>
+        </select>
+        <select id="per-page" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm">
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+        </select>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <input type="date" id="date-from" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm">
+        <span class="text-gray-400 text-sm">to</span>
+        <input type="date" id="date-to" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm">
+        <button id="btn-date-filter" class="bg-gray-800 hover:bg-gray-900 text-white px-3 py-1.5 rounded-lg text-sm font-medium">Apply dates</button>
+        <button id="btn-date-clear" class="text-sm text-gray-500 hover:text-gray-800 px-2">Clear</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table id="tx-table" class="w-full text-sm">
+        <thead>
+          <tr class="bg-gray-50 border-b border-gray-100 text-left">
+            <th class="sortable-th px-6 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap" data-sort-key="datetime" data-sort-type="date">Date / Time</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="product" data-sort-type="string">Product</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="type" data-sort-type="string">Type</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="quantity" data-sort-type="number">Qty</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="stock" data-sort-type="number">Stock</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="by" data-sort-type="string">By</th>
+            <th class="sortable-th px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" data-sort-key="notes" data-sort-type="string">Notes</th>
+          </tr>
+        </thead>
+        <tbody id="tx-body"></tbody>
+      </table>
+    </div>
+    <div class="px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+      <p id="tx-page-info" class="text-sm text-gray-500">—</p>
+      <div class="flex items-center gap-1.5" id="pagination"></div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/sortable_table.js"></script>
+<script>
+const CURRENCY = '{{ currency }}';
+let currentPage = 1;
+let perPage = 25;
+let sortBy = 'datetime';
+let sortDir = 'desc';
+let dateFrom = '';
+let dateTo = '';
+let allProducts = [];
+let stockTableInitialized = false;
+
+const TYPE_BADGES = {
+  stock_in: '<span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Stock In</span>',
+  sale: '<span class="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">Sale</span>',
+  damage: '<span class="text-xs font-medium text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">Damage</span>',
+  stock_out: '<span class="text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">Stock Out</span>',
+};
+
+function statusMeta(p) {
+  if (!p.is_active) return { label: 'Inactive', sort: 'inactive' };
+  if (p.stock_quantity <= 0) return { label: 'Out of stock', sort: 'out' };
+  if (p.is_low_stock) return { label: 'Low stock', sort: 'low' };
+  return { label: 'OK', sort: 'ok' };
+}
+
+function statusBadge(p) {
+  const meta = statusMeta(p);
+  const styles = {
+    inactive: 'text-gray-500 bg-gray-100 border-gray-200',
+    out: 'text-red-700 bg-red-50 border-red-200',
+    low: 'text-amber-700 bg-amber-50 border-amber-200',
+    ok: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+  };
+  return `<span class="text-xs font-medium border px-2 py-0.5 rounded-full ${styles[meta.sort]}">${meta.label}</span>`;
+}
+
+async function loadSummary() {
+  const res = await fetch('/api/inventory/summary');
+  const data = await res.json();
+  document.getElementById('stat-skus').textContent = data.total_skus;
+  document.getElementById('stat-active').textContent = data.active_skus;
+  document.getElementById('stat-low').textContent = data.low_stock_count;
+  document.getElementById('stat-stock-in').textContent = data.stock_in_today;
+}
+
+function renderStockRows() {
+  const tbody = document.getElementById('stock-body');
+  if (!allProducts.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5" class="px-6 py-8 text-center text-gray-400 text-sm">No products yet. Add products in Admin.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = allProducts.map(p => {
+    const meta = statusMeta(p);
+    return `<tr>
+      <td class="px-6 py-3 font-medium text-gray-900" data-sort-value="${p.name}">${p.name}</td>
+      <td class="px-4 py-3 text-gray-600 capitalize" data-sort-value="${p.category}">${p.category}</td>
+      <td class="px-4 py-3 text-gray-800" data-sort-value="${p.unit_price}">${CURRENCY}${Math.round(p.unit_price)}</td>
+      <td class="px-4 py-3 font-semibold text-gray-900" data-sort-value="${p.stock_quantity}">${p.stock_quantity}</td>
+      <td class="px-4 py-3" data-sort-value="${meta.sort}">${statusBadge(p)}</td>
+    </tr>`;
+  }).join('');
+
+  const table = document.getElementById('stock-table');
+  if (!stockTableInitialized) {
+    MerchTable.initSortableTable(table, { key: 'product', dir: 'asc' });
+    stockTableInitialized = true;
+  } else {
+    MerchTable.applyZebra(tbody);
+  }
+}
+
+async function loadStock() {
+  const res = await fetch('/api/inventory/products');
+  const data = await res.json();
+  allProducts = data.products || [];
+
+  const select = document.getElementById('filter-product');
+  select.innerHTML = '<option value="">All products</option>' +
+    allProducts.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+
+  renderStockRows();
+}
+
+function buildTxUrl() {
+  let url = `/api/inventory/transactions?page=${currentPage}&per_page=${perPage}&sort_by=${sortBy}&sort_dir=${sortDir}`;
+  const type = document.getElementById('filter-type').value;
+  const productId = document.getElementById('filter-product').value;
+  if (type) url += `&transaction_type=${type}`;
+  if (productId) url += `&product_id=${productId}`;
+  if (dateFrom) url += `&from=${dateFrom}`;
+  if (dateTo) url += `&to=${dateTo}`;
+  return url;
+}
+
+function renderPagination(data) {
+  const pag = document.getElementById('pagination');
+  pag.innerHTML = '';
+
+  const addBtn = (label, page, disabled = false, active = false) => {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    btn.disabled = disabled;
+    btn.className = `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+      active ? 'bg-violet-600 text-white' : disabled ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+    }`;
+    if (!disabled && !active) btn.onclick = () => { currentPage = page; loadTransactions(); };
+    pag.appendChild(btn);
+  };
+
+  addBtn('«', 1, data.current_page <= 1);
+  addBtn('‹', data.current_page - 1, data.current_page <= 1);
+
+  const windowSize = 5;
+  let startPage = Math.max(1, data.current_page - Math.floor(windowSize / 2));
+  let endPage = Math.min(data.total_pages, startPage + windowSize - 1);
+  startPage = Math.max(1, endPage - windowSize + 1);
+
+  for (let i = startPage; i <= endPage; i++) {
+    addBtn(String(i), i, false, i === data.current_page);
+  }
+
+  addBtn('›', data.current_page + 1, data.current_page >= data.total_pages);
+  addBtn('»', data.total_pages, data.current_page >= data.total_pages);
+}
+
+async function loadTransactions() {
+  const res = await fetch(buildTxUrl());
+  const data = await res.json();
+  const tbody = document.getElementById('tx-body');
+
+  if (!data.items.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7" class="px-6 py-8 text-center text-gray-400 text-sm">No transactions found</td></tr>';
+  } else {
+    tbody.innerHTML = data.items.map(tx => {
+      const badge = TYPE_BADGES[tx.transaction_type] || tx.transaction_type;
+      const sign = tx.transaction_type === 'stock_in' ? '+' : '−';
+      return `<tr>
+        <td class="px-6 py-3 text-xs text-gray-500 whitespace-nowrap" data-sort-value="${tx.datetime}">${new Date(tx.datetime).toLocaleString()}</td>
+        <td class="px-4 py-3 font-medium text-gray-800" data-sort-value="${tx.product_name}">${tx.product_name}</td>
+        <td class="px-4 py-3" data-sort-value="${tx.transaction_type}">${badge}</td>
+        <td class="px-4 py-3 font-semibold" data-sort-value="${tx.quantity}">${sign}${tx.quantity}</td>
+        <td class="px-4 py-3 text-gray-600" data-sort-value="${tx.stock_after}">${tx.stock_before} → ${tx.stock_after}</td>
+        <td class="px-4 py-3 text-gray-600" data-sort-value="${tx.performed_by}">${tx.performed_by}</td>
+        <td class="px-4 py-3 text-gray-500 text-xs max-w-xs truncate" data-sort-value="${tx.notes || ''}">${tx.notes || '—'}</td>
+      </tr>`;
+    }).join('');
+    MerchTable.applyZebra(tbody);
+  }
+
+  document.getElementById('tx-page-info').textContent = data.total === 0
+    ? 'No transactions'
+    : `Showing ${data.start_index}–${data.end_index} of ${data.total} transactions`;
+
+  document.getElementById('tx-range-label').textContent = data.total_pages > 1
+    ? `${data.total_pages} pages — server-side pagination keeps the list fast`
+    : 'Click column headers to sort';
+
+  renderPagination(data);
+}
+
+function reloadTransactions() {
+  currentPage = 1;
+  loadTransactions();
+}
+
+MerchTable.bindServerSort(document.getElementById('tx-table'), (key, dir) => {
+  sortBy = key;
+  sortDir = dir;
+  currentPage = 1;
+  loadTransactions();
+}, { key: 'datetime', dir: 'desc' });
+
+document.getElementById('filter-type').addEventListener('change', reloadTransactions);
+document.getElementById('filter-product').addEventListener('change', reloadTransactions);
+document.getElementById('per-page').addEventListener('change', e => {
+  perPage = parseInt(e.target.value, 10);
+  reloadTransactions();
+});
+document.getElementById('btn-date-filter').addEventListener('click', () => {
+  dateFrom = document.getElementById('date-from').value;
+  dateTo = document.getElementById('date-to').value;
+  reloadTransactions();
+});
+document.getElementById('btn-date-clear').addEventListener('click', () => {
+  dateFrom = dateTo = '';
+  document.getElementById('date-from').value = '';
+  document.getElementById('date-to').value = '';
+  reloadTransactions();
+});
+
+loadSummary();
+loadStock();
+loadTransactions();
+</script>
+{% endblock %}

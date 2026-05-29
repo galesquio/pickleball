@@ -22,6 +22,7 @@
       <option value="all">All Types</option>
       <option value="court">Courts Only</option>
       <option value="racket">Rackets Only</option>
+      <option value="merchandise">Merchandise Only</option>
     </select>
     <div class="flex items-center gap-2">
       <input type="date" id="date-from" class="border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
@@ -32,7 +33,7 @@
   </div>
 
   <!-- Stats -->
-  <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+  <div class="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
     <div class="bg-white border border-gray-200 rounded-xl p-4">
       <div class="flex items-center gap-2 mb-2">
         <div class="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center">
@@ -59,6 +60,15 @@
         <span class="text-xs font-semibold text-amber-600 uppercase tracking-wide">Rackets</span>
       </div>
       <div id="stat-racket" class="text-2xl font-bold text-amber-800">{{ currency }}0</div>
+    </div>
+    <div class="bg-violet-50 border border-violet-100 rounded-xl p-4">
+      <div class="flex items-center gap-2 mb-2">
+        <div class="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center">
+          <svg class="w-4 h-4 text-violet-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/></svg>
+        </div>
+        <span class="text-xs font-semibold text-violet-600 uppercase tracking-wide">Merch</span>
+      </div>
+      <div id="stat-merchandise" class="text-2xl font-bold text-violet-800">{{ currency }}0</div>
     </div>
     <div class="bg-white border border-gray-200 rounded-xl p-4">
       <div class="flex items-center gap-2 mb-2">
@@ -161,6 +171,7 @@ async function loadSummary() {
   document.getElementById('stat-total').textContent = totalLabel;
   document.getElementById('stat-court').textContent = CURRENCY + Math.round(data.court_total);
   document.getElementById('stat-racket').textContent = CURRENCY + Math.round(data.racket_total);
+  document.getElementById('stat-merchandise').textContent = CURRENCY + Math.round(data.merchandise_total || 0);
   document.getElementById('stat-count').textContent = data.transaction_count;
   document.getElementById('stat-active').textContent = data.active_count;
   setTransactionsTotal(data.total);
@@ -174,6 +185,8 @@ async function loadTransactions() {
   tbody.innerHTML = data.items.map(item => {
     const badge = item.type === 'court'
       ? `<span class="text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">Court</span>`
+      : item.type === 'merchandise'
+      ? `<span class="text-xs font-medium text-violet-700 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded-full">Merch</span>`
       : `<span class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Racket</span>`;
     let statusBadge;
     if (item.payment_pending) {

@@ -17,6 +17,7 @@ class User(Base):
 
     court_rentals = relationship("CourtRental", back_populates="cashier")
     racket_rentals = relationship("RacketRental", back_populates="cashier")
+    merchandise_sales = relationship("MerchandiseSale", back_populates="cashier")
 
 
 class Court(Base):
@@ -167,6 +168,76 @@ class RacketSwap(Base):
     swapped_at = Column(DateTime, default=datetime.utcnow)
 
     original_rental = relationship("RacketRental", back_populates="swaps")
+
+
+class MerchandiseProduct(Base):
+    __tablename__ = "merchandise_products"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), nullable=False)
+    sku = Column(String(64), default="", index=True)
+    category = Column(String(32), default="other")
+    unit_price = Column(Float, nullable=False)
+    cost_price = Column(Float, nullable=True)
+    stock_quantity = Column(Integer, default=0, nullable=False)
+    low_stock_threshold = Column(Integer, default=5)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    inventory_transactions = relationship("MerchandiseInventoryTransaction", back_populates="product")
+    sale_items = relationship("MerchandiseSaleItem", back_populates="product")
+
+
+class MerchandiseInventoryTransaction(Base):
+    __tablename__ = "merchandise_inventory_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("merchandise_products.id"), nullable=False)
+    transaction_type = Column(String(16), nullable=False)  # stock_in | stock_out | sale | damage
+    quantity = Column(Integer, nullable=False)
+    stock_before = Column(Integer, nullable=False)
+    stock_after = Column(Integer, nullable=False)
+    unit_cost = Column(Float, nullable=True)
+    notes = Column(Text, default="")
+    reference_id = Column(Integer, nullable=True)
+    performed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    product = relationship("MerchandiseProduct", back_populates="inventory_transactions")
+    user = relationship("User")
+
+
+class MerchandiseSale(Base):
+    __tablename__ = "merchandise_sales"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cashier_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    subtotal = Column(Float, nullable=False)
+    amount_paid = Column(Float, nullable=False)
+    change_given = Column(Float, nullable=False, default=0)
+    payment_method = Column(String(16), default="cash")
+    customer_name = Column(String(128), default="")
+    notes = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    cashier = relationship("User", back_populates="merchandise_sales")
+    items = relationship("MerchandiseSaleItem", back_populates="sale", cascade="all, delete-orphan")
+
+
+class MerchandiseSaleItem(Base):
+    __tablename__ = "merchandise_sale_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sale_id = Column(Integer, ForeignKey("merchandise_sales.id"), nullable=False)
+    product_id = Column(Integer, ForeignKey("merchandise_products.id"), nullable=False)
+    product_name = Column(String(128), nullable=False)
+    unit_price = Column(Float, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    line_total = Column(Float, nullable=False)
+
+    sale = relationship("MerchandiseSale", back_populates="items")
+    product = relationship("MerchandiseProduct", back_populates="sale_items")
 
 
 class SystemLog(Base):

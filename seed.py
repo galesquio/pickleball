@@ -1,9 +1,56 @@
 from sqlalchemy.orm import Session
 
 from auth import hash_password
-from models import Court, Promo, Racket, RentalTimeOption, SystemSettings, User
+from models import Court, MerchandiseProduct, Promo, Racket, RentalTimeOption, SystemSettings, User
+from merchandise_service import create_product
 from overtime_service import ensure_settings
 from promo_service import PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT
+
+
+from promo_service import PROMO_BONUS_MINUTES, PROMO_DISCOUNT_PERCENT
+
+# name, category, unit_price, initial_stock, sku (optional)
+DEFAULT_MERCH_PRODUCTS = [
+    ("Mineral Water 500ml", "drink", 25, 20, "DRK-001"),
+    ("Sports Towel", "towel", 150, 8, "TWL-001"),
+    ("Pickleball (single)", "ball", 80, 20, "BAL-001"),
+    ("Entry Racket", "racket", 1200, 5, "RKT-001"),
+    ("Gatorade 500ml", "drink", 35, 24, "DRK-002"),
+    ("Coconut Water 330ml", "drink", 40, 18, "DRK-003"),
+    ("Electrolyte Powder Sachet", "drink", 55, 25, "DRK-004"),
+    ("Energy Bar", "other", 45, 30, "SNK-001"),
+    ("Banana Chips Snack", "other", 35, 20, "SNK-002"),
+    ("Bag of Ice (small)", "other", 50, 30, "SNK-003"),
+    ("Cooling Towel (small)", "towel", 120, 16, "TWL-002"),
+    ("Pickleball 3-Pack", "ball", 220, 14, "BAL-002"),
+    ("Indoor Pickleball (6-pack)", "ball", 380, 10, "BAL-003"),
+    ("Outdoor Pickleball (6-pack)", "ball", 450, 8, "BAL-004"),
+    ("Paddle Overgrip (3-pack)", "other", 150, 20, "ACC-001"),
+    ("Wristband Set", "other", 85, 25, "ACC-002"),
+    ("Sports Cap", "other", 250, 12, "ACC-003"),
+    ("Facility T-Shirt", "other", 350, 15, "ACC-004"),
+    ("Paddle Cover", "other", 350, 10, "ACC-005"),
+    ("Premium Carbon Paddle", "racket", 4500, 3, "RKT-002"),
+]
+
+
+def seed_merchandise_products(db: Session) -> None:
+    admin = db.query(User).filter(User.username == "admin").first()
+    if not admin:
+        return
+    existing_names = {name for (name,) in db.query(MerchandiseProduct.name).all()}
+    for name, category, price, stock, sku in DEFAULT_MERCH_PRODUCTS:
+        if name in existing_names:
+            continue
+        create_product(
+            db,
+            admin.id,
+            name,
+            price,
+            category=category,
+            sku=sku,
+            initial_stock=stock,
+        )
 
 
 def seed_database(db: Session) -> bool:
@@ -124,6 +171,8 @@ def seed_database(db: Session) -> bool:
                 is_active=True,
             )
         )
+
+    seed_merchandise_products(db)
 
     db.commit()
     return admin_created

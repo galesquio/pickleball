@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% block title %}Merchandise — Pickleball{% endblock %}
+{% block head %}
+<style>
+  .product-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: box-shadow 0.15s ease, transform 0.15s ease;
+  }
+  .product-card:hover:not(.out-of-stock) {
+    box-shadow: 0 4px 16px -4px rgba(0,0,0,0.12);
+    transform: translateY(-1px);
+  }
+  .product-card:active:not(.out-of-stock) { transform: scale(0.97); }
+  .product-card.out-of-stock { opacity: 0.5; pointer-events: none; filter: grayscale(0.5); }
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="p-4 lg:p-8 max-w-screen-2xl mx-auto w-full h-full flex flex-col min-h-0">
+
+  <div class="mb-4 shrink-0">
+    <h1 class="text-2xl font-bold text-gray-900">Merchandise Sales</h1>
+    <p class="text-gray-500 text-sm mt-0.5">Sell water, towels, balls, rackets and more</p>
+  </div>
+
+  <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
+
+    <!-- Products -->
+    <div class="lg:col-span-3 flex flex-col min-h-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center gap-3 shrink-0">
+        <input type="search" id="product-search" placeholder="Search products…"
+          class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none">
+        <select id="category-filter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:ring-2 focus:ring-violet-500 outline-none">
+          <option value="">All categories</option>
+          <option value="drink">Drinks</option>
+          <option value="towel">Towels</option>
+          <option value="ball">Balls</option>
+          <option value="racket">Rackets</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div id="product-grid" class="flex-1 overflow-y-auto p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
+        <div class="col-span-full text-center text-gray-400 py-12 text-sm">Loading products…</div>
+      </div>
+    </div>
+
+    <!-- Cart -->
+    <div class="lg:col-span-2 flex flex-col min-h-0 bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
+      <div class="px-4 py-3 border-b border-violet-100 bg-violet-50 shrink-0">
+        <h2 class="font-semibold text-violet-900 text-sm">Cart</h2>
+      </div>
+
+      <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-2 min-h-[120px]">
+        <p class="text-sm text-gray-400 text-center py-8">Tap a product to add to cart</p>
+      </div>
+
+      <div class="border-t border-gray-100 p-4 space-y-3 shrink-0 bg-gray-50">
+        <div class="flex justify-between text-sm">
+          <span class="text-gray-600">Subtotal</span>
+          <span id="cart-subtotal" class="font-bold text-gray-900">{{ currency }}0</span>
+        </div>
+
+        <input type="text" id="customer-name" placeholder="Customer name (optional)"
+          class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+
+        <div>
+          <label class="block text-xs font-medium text-gray-500 mb-1">Amount paid</label>
+          <input type="number" id="amount-paid" min="0" step="0.01" placeholder="0.00"
+            class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-lg font-semibold bg-white focus:ring-2 focus:ring-violet-500 outline-none">
+        </div>
+
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-gray-600">Change</span>
+          <span id="change-display" class="text-xl font-bold text-emerald-600">{{ currency }}0</span>
+        </div>
+        <p id="payment-warning" class="text-xs text-red-600 hidden">Payment is less than total</p>
+
+        <button id="btn-complete-sale" disabled
+          class="w-full bg-violet-600 hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-xl text-sm font-semibold transition-colors">
+          Complete Sale
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CURRENCY = '{{ currency }}';
+let products = [];
+const cart = new Map();
+
+function formatMoney(n) {
+  return CURRENCY + Math.round(Number(n) || 0);
+}
+
+function cartSubtotal() {
+  let total = 0;
+  for (const [, item] of cart) total += item.unit_price * item.quantity;
+  return Math.round(total * 100) / 100;
+}
+
+function updatePaymentUI() {
+  const subtotal = cartSubtotal();
+  const paid = parseFloat(document.getElementById('amount-paid').value) || 0;
+  const change = Math.max(0, Math.round((paid - subtotal) * 100) / 100);
+  const warning = document.getElementById('payment-warning');
+  const changeEl = document.getElementById('change-display');
+  const btn = document.getElementById('btn-complete-sale');
+
+  document.getElementById('cart-subtotal').textContent = formatMoney(subtotal);
+  changeEl.textContent = formatMoney(change);
+
+  if (subtotal > 0 && paid < subtotal - 0.009) {
+    warning.classList.remove('hidden');
+    changeEl.classList.remove('text-emerald-600');
+    changeEl.classList.add('text-red-600');
+  } else {
+    warning.classList.add('hidden');
+    changeEl.classList.add('text-emerald-600');
+    changeEl.classList.remove('text-red-600');
+  }
+
+  btn.disabled = cart.size === 0 || subtotal <= 0 || paid < subtotal - 0.009;
+}
+
+function renderCart() {
+  const container = document.getElementById('cart-items');
+  if (cart.size === 0) {
+    container.innerHTML = '<p class="text-sm text-gray-400 text-center py-8">Tap a product to add to cart</p>';
+    updatePaymentUI();
+    renderProducts();
+    return;
+  }
+
+  container.innerHTML = [...cart.values()].map(item => `
+    <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
+      <div class="flex-1 min-w-0">
+        <div class="font-medium text-sm text-gray-900 truncate">${item.name}</div>
+        <div class="text-xs text-gray-500">${formatMoney(item.unit_price)} each</div>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        <button type="button" data-action="dec" data-id="${item.id}"
+          class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm">−</button>
+        <span class="w-8 text-center text-sm font-semibold">${item.quantity}</span>
+        <button type="button" data-action="inc" data-id="${item.id}"
+          class="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm">+</button>
+      </div>
+      <div class="text-sm font-semibold text-gray-900 w-16 text-right shrink-0">${formatMoney(item.unit_price * item.quantity)}</div>
+      <button type="button" data-action="remove" data-id="${item.id}"
+        class="text-gray-400 hover:text-red-500 p-1 shrink-0">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  `).join('');
+
+  updatePaymentUI();
+}
+
+function addToCart(product) {
+  if (product.stock_quantity <= 0) return;
+  const existing = cart.get(product.id);
+  const qty = (existing?.quantity || 0) + 1;
+  if (qty > product.stock_quantity) {
+    showToast(`Only ${product.stock_quantity} in stock for ${product.name}`, 'error');
+    return;
+  }
+  cart.set(product.id, {
+    id: product.id,
+    name: product.name,
+    unit_price: product.unit_price,
+    quantity: qty,
+    stock_quantity: product.stock_quantity,
+  });
+  renderCart();
+  renderProducts();
+}
+
+function categoryLabel(cat) {
+  const labels = { drink: 'Drink', towel: 'Towel', ball: 'Ball', racket: 'Racket', other: 'Other' };
+  return labels[cat] || cat;
+}
+
+const CATEGORY_THEME = {
+  drink:  { chip: 'bg-sky-100 text-sky-700',     accent: 'bg-sky-400' },
+  towel:  { chip: 'bg-teal-100 text-teal-700',   accent: 'bg-teal-400' },
+  ball:   { chip: 'bg-amber-100 text-amber-800',  accent: 'bg-amber-400' },
+  racket: { chip: 'bg-violet-100 text-violet-700', accent: 'bg-violet-500' },
+  other:  { chip: 'bg-rose-100 text-rose-700',   accent: 'bg-rose-400' },
+};
+
+function stockBadge(p) {
+  const out = p.stock_quantity <= 0;
+  const low = !out && p.is_low_stock;
+  if (out) {
+    return '<span class="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-red-700 bg-red-50 border border-red-200/80 px-2 py-0.5 rounded-full">Sold out</span>';
+  }
+  if (low) {
+    return `<span class="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-full"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>${p.stock_quantity} left</span>`;
+  }
+  return `<span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-white/80 border border-gray-200/80 px-2 py-0.5 rounded-full backdrop-blur-sm">${p.stock_quantity} in stock</span>`;
+}
+
+function renderProducts() {
+  const search = document.getElementById('product-search').value.toLowerCase();
+  const category = document.getElementById('category-filter').value;
+  const grid = document.getElementById('product-grid');
+
+  const filtered = products.filter(p => {
+    if (category && p.category !== category) return false;
+    if (search && !p.name.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="col-span-full text-center text-gray-400 py-16 text-sm">No products found</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(p => {
+    const out = p.stock_quantity <= 0;
+    const theme = CATEGORY_THEME[p.category] || CATEGORY_THEME.other;
+    const inCart = cart.has(p.id);
+    const cartQty = inCart ? cart.get(p.id).quantity : 0;
+
+    const addBtn = inCart
+      ? `<span class="inline-flex items-center gap-1 text-xs font-bold text-violet-700 bg-violet-100 border border-violet-200 px-2.5 py-1 rounded-full shrink-0">
+           <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+           ${cartQty}
+         </span>`
+      : `<span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-violet-600 text-white shrink-0">
+           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+         </span>`;
+
+    return `
+      <button type="button" data-product-id="${p.id}"
+        class="product-card h-full text-left bg-white border border-gray-200 rounded-xl shadow-sm ${out ? 'out-of-stock' : ''} ${inCart ? 'ring-2 ring-violet-400' : ''}">
+
+        <!-- Top accent bar -->
+        <div class="h-1 w-full ${theme.accent} rounded-t-xl"></div>
+
+        <!-- Card body -->
+        <div class="flex-1 p-3 flex flex-col gap-2">
+
+          <!-- Row 1: category chip + stock badge -->
+          <div class="flex items-center justify-between gap-1">
+            <span class="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${theme.chip}">${categoryLabel(p.category)}</span>
+            ${stockBadge(p)}
+          </div>
+
+          <!-- Product name — flex-1 pushes price row to bottom -->
+          <h3 class="flex-1 font-semibold text-sm text-gray-900 leading-snug line-clamp-2">${p.name}</h3>
+
+          <!-- Row 3: price + add button — always at bottom -->
+          <div class="flex items-center justify-between gap-2 pt-0.5">
+            <span class="text-base font-bold text-gray-900 leading-none">${formatMoney(p.unit_price)}</span>
+            ${addBtn}
+          </div>
+
+        </div>
+      </button>`;
+  }).join('');
+}
+
+async function loadProducts() {
+  const res = await fetch('/api/merchandise/products');
+  const data = await res.json();
+  products = data.products || [];
+  renderProducts();
+}
+
+document.getElementById('product-grid').addEventListener('click', e => {
+  const btn = e.target.closest('[data-product-id]');
+  if (!btn) return;
+  const product = products.find(p => p.id === parseInt(btn.dataset.productId, 10));
+  if (product) addToCart(product);
+});
+
+document.getElementById('cart-items').addEventListener('click', e => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const id = parseInt(btn.dataset.id, 10);
+  const item = cart.get(id);
+  if (!item) return;
+  const product = products.find(p => p.id === id);
+
+  if (btn.dataset.action === 'remove') {
+    cart.delete(id);
+  } else if (btn.dataset.action === 'inc') {
+    const max = product?.stock_quantity ?? item.stock_quantity;
+    if (item.quantity >= max) {
+      showToast(`Only ${max} in stock`, 'error');
+      return;
+    }
+    item.quantity += 1;
+  } else if (btn.dataset.action === 'dec') {
+    item.quantity -= 1;
+    if (item.quantity <= 0) cart.delete(id);
+  }
+  renderCart();
+  renderProducts();
+});
+
+document.getElementById('amount-paid').addEventListener('input', updatePaymentUI);
+document.getElementById('product-search').addEventListener('input', renderProducts);
+document.getElementById('category-filter').addEventListener('change', renderProducts);
+
+document.getElementById('btn-complete-sale').addEventListener('click', async () => {
+  const subtotal = cartSubtotal();
+  const amountPaid = parseFloat(document.getElementById('amount-paid').value) || 0;
+  const customerName = document.getElementById('customer-name').value.trim();
+  const items = [...cart.values()].map(i => ({ product_id: i.id, quantity: i.quantity }));
+
+  const btn = document.getElementById('btn-complete-sale');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+
+  try {
+    const res = await fetch('/api/merchandise/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items, amount_paid: amountPaid, customer_name: customerName }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      showToast(data.error || 'Sale failed', 'error');
+      return;
+    }
+    showToast(`Sale complete! Change: ${formatMoney(data.change_given)}`, 'success');
+    cart.clear();
+    document.getElementById('amount-paid').value = '';
+    document.getElementById('customer-name').value = '';
+    renderCart();
+    await loadProducts();
+  } catch {
+    showToast('Network error', 'error');
+  } finally {
+    btn.textContent = 'Complete Sale';
+    updatePaymentUI();
+  }
+});
+
+loadProducts();
+</script>
+{% endblock %}

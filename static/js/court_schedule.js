@@ -56,6 +56,13 @@ function _todayDateStr() {
   return _phDateStr(_facilityNow());
 }
 
+function _minDateStr() {
+  // Yesterday (earliest date the schedule allows)
+  const d = _facilityNow();
+  d.setDate(d.getDate() - 1);
+  return _phDateStr(d);
+}
+
 function _maxDateStr() {
   const d = _facilityNow();
   d.setDate(d.getDate() + 7);
@@ -87,31 +94,44 @@ function _renderDateNav() {
   if (!nav) return;
 
   const today = _todayDateStr();
+  const minDate = _minDateStr();
   const maxDate = _maxDateStr();
   if (!_viewDate) _viewDate = today;
 
   const isToday = _viewDate === today;
+  const isMin = _viewDate === minDate;
   const isMax = _viewDate === maxDate;
   const dayDiff = Math.round(
     (new Date(_viewDate + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000
   );
-  const aheadBadge = dayDiff > 0
-    ? `<span class="text-[11px] font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">${dayDiff} day${dayDiff > 1 ? 's' : ''} ahead</span>`
-    : '';
+
+  let dateBadge = '';
+  if (dayDiff > 0) {
+    dateBadge = `<span class="text-[11px] font-semibold text-blue-600 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">${dayDiff} day${dayDiff > 1 ? 's' : ''} ahead</span>`;
+  } else if (dayDiff === -1) {
+    dateBadge = `<span class="text-[11px] font-semibold text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">Yesterday</span>`;
+  }
+
+  let subtitle;
+  if (isToday) {
+    subtitle = 'Click on open slots to book';
+  } else if (dayDiff < 0) {
+    subtitle = _fmtNavDate(_viewDate) + ' — view only';
+  } else {
+    subtitle = _fmtNavDate(_viewDate) + ' — advance booking';
+  }
 
   nav.innerHTML = `
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div class="min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-sm font-bold text-gray-900">${isToday ? "Today's Schedule" : 'Court Schedule'}</span>
-          ${aheadBadge}
+          ${dateBadge}
         </div>
-        <p class="text-xs text-gray-500 mt-0.5">
-          ${isToday ? 'Click on open slots to book' : _fmtNavDate(_viewDate) + ' — advance booking'}
-        </p>
+        <p class="text-xs text-gray-500 mt-0.5">${subtitle}</p>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
-        <button id="date-nav-prev" ${isToday ? 'disabled' : ''}
+        <button id="date-nav-prev" ${isMin ? 'disabled' : ''}
           class="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
@@ -134,7 +154,7 @@ function _renderDateNav() {
     </div>`;
 
   document.getElementById('date-nav-prev')?.addEventListener('click', () => {
-    if (_viewDate > today) { _viewDate = _addDays(_viewDate, -1); loadCourtsSchedule(); }
+    if (_viewDate > minDate) { _viewDate = _addDays(_viewDate, -1); loadCourtsSchedule(); }
   });
   document.getElementById('date-nav-today')?.addEventListener('click', () => {
     _viewDate = today; loadCourtsSchedule();

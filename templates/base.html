@@ -94,6 +94,17 @@
         <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Rackets</span>
       </a>
 
+      <!-- Merchandise -->
+      {% set _active = request.url.path == '/merchandise' %}
+      <a href="/merchandise" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-violet-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-violet-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Shop</span>
+      </a>
+
       <!-- Sales -->
       {% set _active = request.url.path == '/sales' %}
       <a href="/sales" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
@@ -167,6 +178,13 @@
         </svg>
         Rackets
       </a>
+      <a href="/merchandise" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if request.url.path == '/merchandise' %}bg-violet-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"/>
+        </svg>
+        Merchandise
+      </a>
       <div class="my-1 border-t border-gray-800/60"></div>
       <a href="/sales" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
         {% if request.url.path == '/sales' %}bg-teal-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
@@ -183,6 +201,13 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
         Admin
+      </a>
+      <a href="/inventory" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if request.url.path == '/inventory' %}bg-violet-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+        </svg>
+        Inventory
       </a>
       {% endif %}
     </nav>

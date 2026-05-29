@@ -8,18 +8,27 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from auth import require_user
+from auth import require_role, require_user
 from config import facility_now
 from database import get_db
 from overtime_service import get_settings
-from models import Court, CourtRental, Racket, RacketRental, RentalTimeOption
+from models import Court, CourtRental, MerchandiseProduct, MerchandiseSale, Racket, RacketRental, RentalTimeOption
 from schemas import (
     CompleteRentalRequest,
     CourtRentRequest,
     CourtScheduleRentRequest,
+    MerchandiseSaleRequest,
     RacketRentRequest,
     RacketSwapRequest,
     RecordPaymentRequest,
+)
+from merchandise_service import (
+    create_merchandise_sale,
+    get_inventory_transactions,
+    inventory_summary,
+    merchandise_sales_in_period,
+    merchandise_sales_revenue,
+    product_to_dict,
 )
 from promo_service import active_promos_for_type, promo_hints_for_options
 from services import (
@@ -341,6 +350,12 @@ def api_sales_summary(
 
     court_total = sum(rental_sales_revenue(r) for r in court_rentals)
     racket_total = sum(rental_sales_revenue(r) for r in racket_rentals)
+
+    merch_sales = []
+    if type in ("all", "merchandise"):
+        merch_sales = merchandise_sales_in_period(db, start, end)
+    merch_total = merchandise_sales_revenue(merch_sales)
+
     pending_collection = round(
         sum(float(r.payment_pending_amount or 0) for r in court_rentals + racket_rentals if r.payment_pending),
         2,
@@ -348,15 +363,17 @@ def api_sales_summary(
 
     court_count = len(court_rentals)
     racket_count = len(racket_rentals)
+    merch_count = len(merch_sales)
 
     active_courts = db.query(CourtRental).filter(CourtRental.status == "active").count()
     active_rackets = db.query(RacketRental).filter(RacketRental.status == "active").count()
 
     return {
-        "total": court_total + racket_total,
+        "total": court_total + racket_total + merch_total,
         "court_total": court_total,
         "racket_total": racket_total,
-        "transaction_count": court_count + racket_count,
+        "merchandise_total": merch_total,
+        "transaction_count": court_count + racket_count + merch_count,
         "active_count": active_courts + active_rackets,
         "pending_collection": pending_collection,
     }
@@ -459,6 +476,34 @@ def api_sales_transactions(
                 }
             )
 
+    if type in ("all", "merchandise"):
+        merch_sales = merchandise_sales_in_period(db, start, end)
+        for s in merch_sales:
+            item_names = ", ".join(
+                f"{i.product_name}×{i.quantity}" for i in (s.items or [])
+            )
+            items.append(
+                {
+                    "datetime": s.created_at.isoformat(),
+                    "type": "merchandise",
+                    "item": item_names or f"Sale #{s.id}",
+                    "customer": s.customer_name or "—",
+                    "duration": f"{len(s.items or [])} item(s)",
+                    "amount": float(s.subtotal or 0),
+                    "base_amount": float(s.subtotal or 0),
+                    "amount_paid": float(s.amount_paid or 0),
+                    "balance_due": 0,
+                    "overtime_charge": 0,
+                    "checkout_payment": float(s.amount_paid or 0),
+                    "checkout_change": float(s.change_given or 0),
+                    "cashier": s.cashier.username if s.cashier else "",
+                    "status": "completed",
+                    "payment_pending": False,
+                    "payment_pending_amount": 0,
+                    "in_sales": True,
+                }
+            )
+
     items.sort(key=lambda x: x["datetime"], reverse=True)
     count = len(items)
     amount_total = sum(item["amount"] for item in items)
@@ -554,6 +599,32 @@ def api_sales_export(
                     r.status,
                     "Yes" if r.payment_pending else "",
                     float(r.payment_pending_amount or 0) if r.payment_pending else "",
+                )
+            )
+
+    if type in ("all", "merchandise"):
+        merch_sales = merchandise_sales_in_period(db, start, end)
+        for s in merch_sales:
+            item_names = ", ".join(
+                f"{i.product_name}×{i.quantity}" for i in (s.items or [])
+            )
+            rows.append(
+                (
+                    s.created_at.isoformat(),
+                    "Merchandise",
+                    item_names or f"Sale #{s.id}",
+                    s.customer_name or "",
+                    f"{len(s.items or [])} item(s)",
+                    float(s.subtotal or 0),
+                    float(s.subtotal or 0),
+                    float(s.amount_paid or 0),
+                    0,
+                    float(s.amount_paid or 0),
+                    float(s.change_given or 0),
+                    s.cashier.username if s.cashier else "",
+                    "completed",
+                    "",
+                    "",
                 )
             )
 
@@ -736,6 +807,7 @@ def api_court_schedule(
     require_user(request, db)
     auto_complete_expired_rentals(db)
     today = date.today()
+    min_date = today - timedelta(days=1)   # allow yesterday
     max_date = today + timedelta(days=7)
 
     if view_date:
@@ -746,13 +818,14 @@ def api_court_schedule(
     else:
         target_date = today
 
-    # Clamp to allowed window: today … today+7
-    if target_date < today:
-        target_date = today
+    # Clamp to allowed window: yesterday … today+7
+    if target_date < min_date:
+        target_date = min_date
     elif target_date > max_date:
         target_date = max_date
 
     is_today = target_date == today
+    is_past_date = target_date < today
     day_start = datetime.combine(target_date, dtime.min)
     day_end = day_start + timedelta(days=1)
 
@@ -812,7 +885,9 @@ def api_court_schedule(
         "is_today": is_today,
         "now_iso": now.isoformat(),
         # current_hour: used to mark past cells — only meaningful for today
-        "current_hour": now.hour if is_today else -1,
+        # current_hour: drives "past" cell shading in the grid
+        # today → shade hours before now; past date → shade all (24); future → shade none (-1)
+        "current_hour": now.hour if is_today else (24 if is_past_date else -1),
         "rentals": rental_list,
         "cancellation_policy": {
             "allow_cancel_unpaid": bool(settings.allow_cancel_unpaid_booking),
@@ -841,3 +916,123 @@ def api_active_promos(request: Request, db: Session = Depends(get_db), type: str
                 }
             )
     return {"promos": result}
+
+
+@router.get("/merchandise/products")
+def api_merchandise_products(request: Request, db: Session = Depends(get_db)):
+    require_user(request, db)
+    products = (
+        db.query(MerchandiseProduct)
+        .filter(MerchandiseProduct.is_active.is_(True))
+        .order_by(MerchandiseProduct.category, MerchandiseProduct.name)
+        .all()
+    )
+    return {"products": [product_to_dict(p) for p in products]}
+
+
+@router.post("/merchandise/sales")
+def api_merchandise_sale(
+    request: Request,
+    body: MerchandiseSaleRequest,
+    db: Session = Depends(get_db),
+):
+    user = require_user(request, db)
+    try:
+        sale = create_merchandise_sale(
+            db,
+            [{"product_id": i.product_id, "quantity": i.quantity} for i in body.items],
+            body.amount_paid,
+            user.id,
+            customer_name=body.customer_name,
+            notes=body.notes,
+        )
+        db.commit()
+        return {
+            "success": True,
+            "sale_id": sale.id,
+            "subtotal": sale.subtotal,
+            "amount_paid": sale.amount_paid,
+            "change_given": sale.change_given,
+        }
+    except ValueError as e:
+        return _error(str(e))
+
+
+@router.get("/inventory/products")
+def api_inventory_products(request: Request, db: Session = Depends(get_db)):
+    require_role(request, db, "admin")
+    products = db.query(MerchandiseProduct).order_by(MerchandiseProduct.category, MerchandiseProduct.name).all()
+    return {"products": [product_to_dict(p) for p in products]}
+
+
+@router.get("/inventory/summary")
+def api_inventory_summary(request: Request, db: Session = Depends(get_db)):
+    require_role(request, db, "admin")
+    return inventory_summary(db)
+
+
+@router.get("/inventory/transactions")
+def api_inventory_transactions(
+    request: Request,
+    db: Session = Depends(get_db),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(25, ge=1, le=100),
+    product_id: Optional[int] = Query(None),
+    transaction_type: Optional[str] = Query(None),
+    from_date: Optional[str] = Query(None, alias="from"),
+    to_date: Optional[str] = Query(None, alias="to"),
+    sort_by: str = Query("datetime"),
+    sort_dir: str = Query("desc"),
+):
+    require_role(request, db, "admin")
+    start, end = None, None
+    if from_date or to_date:
+        start, end = _parse_dates(from_date, to_date)
+    if from_date and not to_date:
+        end = start + timedelta(days=1)
+
+    allowed_sort = {"datetime", "product", "type", "quantity", "stock", "by", "notes"}
+    if sort_by not in allowed_sort:
+        sort_by = "datetime"
+    if sort_dir not in ("asc", "desc"):
+        sort_dir = "desc"
+
+    rows, total = get_inventory_transactions(
+        db,
+        product_id=product_id,
+        transaction_type=transaction_type,
+        start=start,
+        end=end,
+        page=page,
+        per_page=per_page,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    start_index = 0 if total == 0 else (page - 1) * per_page + 1
+    end_index = min(page * per_page, total)
+    return {
+        "items": [
+            {
+                "id": tx.id,
+                "datetime": tx.created_at.isoformat(),
+                "product_id": tx.product_id,
+                "product_name": tx.product.name if tx.product else "",
+                "transaction_type": tx.transaction_type,
+                "quantity": tx.quantity,
+                "stock_before": tx.stock_before,
+                "stock_after": tx.stock_after,
+                "notes": tx.notes or "",
+                "performed_by": tx.user.username if tx.user else "",
+            }
+            for tx in rows
+        ],
+        "total_pages": total_pages,
+        "current_page": page,
+        "per_page": per_page,
+        "total": total,
+        "start_index": start_index,
+        "end_index": end_index,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
+    }

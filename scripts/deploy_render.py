@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Deploy pickleball to Render via the public API (SQLite by default).
+"""Deploy pickleball to Render via the public API (PostgreSQL by default).
 
 Requires:
   set RENDER_API_KEY=rnd_...   (from CLI `render login` or dashboard API keys)
 
 Usage:
-  python scripts/deploy_render.py              # SQLite (no Postgres)
-  python scripts/deploy_render.py --postgres   # optional Postgres instead
+  python scripts/deploy_render.py              # PostgreSQL (matches render.yaml)
+  python scripts/deploy_render.py --sqlite     # SQLite on the web service instead
   python scripts/deploy_render.py --dry-run
+
+Prefer deploying with `render.yaml` Blueprint from the dashboard when possible.
 """
 
 from __future__ import annotations
@@ -122,9 +124,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Deploy pickleball to Render")
     parser.add_argument("--dry-run", action="store_true", help="Print planned actions only")
     parser.add_argument(
-        "--postgres",
+        "--sqlite",
         action="store_true",
-        help="Use Render PostgreSQL instead of SQLite",
+        help="Use SQLite on the web service instead of Render PostgreSQL",
     )
     parser.add_argument(
         "--data-dir",
@@ -145,11 +147,9 @@ def main() -> None:
     data_dir = args.data_dir.strip() or None
 
     env_vars = web_env_vars_sqlite(pb_secret, data_dir)
-    if args.postgres:
-        env_vars.append({"key": "DATABASE_URL", "value": "<postgres-connection-string>"})
 
     plan = {
-        "mode": "postgres" if args.postgres else "sqlite",
+        "mode": "sqlite" if args.sqlite else "postgres",
         "owner_id": owner_id,
         "data_dir": data_dir,
         "web": {
@@ -164,7 +164,7 @@ def main() -> None:
 
     existing_web = find_web_service(key)
 
-    if args.postgres:
+    if not args.sqlite:
         existing_pg = None
         for row in api("GET", "/postgres", key) or []:
             pg = row.get("postgres") or row
@@ -202,7 +202,8 @@ def main() -> None:
         ]
     else:
         print("Deploying with SQLite (pickleball.db on the service filesystem).")
-        print("Note: on the free plan, the DB is reset when you redeploy.")
+        print("Note: on the free plan, SQLite data is reset when you redeploy.")
+        print("Prefer render.yaml Blueprint with PostgreSQL for production.")
 
     web_body = {
         "type": "web_service",

@@ -505,7 +505,9 @@ function openScheduleDetail(rentalId) {
   const cancelBtn = document.getElementById('sd-cancel-btn');
   const cancelHint = document.getElementById('sd-cancel-hint');
   if (payBtn) payBtn.style.display = (isActive && !rental.is_paid) ? '' : 'none';
-  if (completeBtn) completeBtn.style.display = (isActive && !rental.is_upcoming) ? '' : 'none';
+  if (completeBtn) {
+    completeBtn.style.display = (isActive && !rental.is_upcoming && !pendingCash) ? '' : 'none';
+  }
   if (collectBtn) collectBtn.classList.toggle('hidden', !pendingCash);
 
   if (cancelBtn) {
@@ -608,8 +610,6 @@ function openScheduleDetail(rentalId) {
     });
     document.getElementById('sd-collect-btn')?.addEventListener('click', async () => {
       if (!_detailRental) return;
-      const amt = _money(_detailRental.payment_pending_amount);
-      if (!confirm(`Confirm you collected ${amt} cash from ${_detailRental.customer_name}?`)) return;
       try {
         const res = await fetch(`/api/payment/court/${_detailRental.id}/collect`, { method: 'POST' });
         const data = await res.json();

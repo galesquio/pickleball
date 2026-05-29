@@ -1,9 +1,12 @@
+import logging
 import os
 import sys
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
+
+logger = logging.getLogger(__name__)
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).parent
@@ -37,9 +40,14 @@ def _sqlite_database_url() -> str:
 
 
 def resolve_database_url() -> str:
+    """PostgreSQL when DATABASE_URL is set (Render); SQLite for local desktop dev."""
     explicit = os.getenv("DATABASE_URL", "").strip()
     if explicit:
         return _normalize_database_url(explicit)
+    if os.getenv("RENDER", "").lower() == "true":
+        raise RuntimeError(
+            "DATABASE_URL is required on Render. Link a PostgreSQL database in render.yaml."
+        )
     return _sqlite_database_url()
 
 
@@ -55,6 +63,28 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def database_backend_label() -> str:
+    return "SQLite" if _is_sqlite else "PostgreSQL"
+
+
+def _migration_types() -> dict[str, str]:
+    if _is_sqlite:
+        return {
+            "datetime": "DATETIME",
+            "real": "REAL",
+            "int": "INTEGER",
+            "bool_false": "INTEGER DEFAULT 0",
+            "bool_true": "INTEGER DEFAULT 1",
+        }
+    return {
+        "datetime": "TIMESTAMP",
+        "real": "DOUBLE PRECISION",
+        "int": "INTEGER",
+        "bool_false": "BOOLEAN DEFAULT FALSE",
+        "bool_true": "BOOLEAN DEFAULT TRUE",
+    }
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -64,9 +94,8 @@ def get_db():
 
 
 def migrate_db():
-    """Add columns/tables for existing SQLite databases."""
-    from sqlalchemy import inspect, text
-
+    """Add columns/tables for databases created before schema changes."""
+    t = _migration_types()
     insp = inspect(engine)
     tables = set(insp.get_table_names())
 
@@ -82,44 +111,53 @@ def migrate_db():
             from models import SystemSettings  # noqa: F401
 
             SystemSettings.__table__.create(bind=conn)
-            conn.execute(
-                text(
-                    "INSERT INTO system_settings (id, court_overtime_rate, racket_overtime_rate, "
-                    "overtime_grace_minutes, warning_minutes, allow_cancel_unpaid_booking, "
-                    "allow_cancel_paid_booking) VALUES (1, 50.0, 20.0, 10, 15, 1, 0)"
+            if _is_sqlite:
+                conn.execute(
+                    text(
+                        "INSERT INTO system_settings (id, court_overtime_rate, racket_overtime_rate, "
+                        "overtime_grace_minutes, warning_minutes, allow_cancel_unpaid_booking, "
+                        "allow_cancel_paid_booking) VALUES (1, 50.0, 20.0, 10, 15, 1, 0)"
+                    )
                 )
-            )
+            else:
+                conn.execute(
+                    text(
+                        "INSERT INTO system_settings (id, court_overtime_rate, racket_overtime_rate, "
+                        "overtime_grace_minutes, warning_minutes, allow_cancel_unpaid_booking, "
+                        "allow_cancel_paid_booking) VALUES (1, 50.0, 20.0, 10, 15, TRUE, FALSE)"
+                    )
+                )
             insp = inspect(engine)
             tables = set(insp.get_table_names())
 
         rental_completion_cols = [
-            ("court_rentals", "completed_at", "DATETIME"),
-            ("court_rentals", "overtime_minutes", "INTEGER DEFAULT 0"),
-            ("court_rentals", "overtime_hours_charged", "INTEGER DEFAULT 0"),
-            ("court_rentals", "overtime_charge", "REAL DEFAULT 0"),
-            ("court_rentals", "checkout_payment", "REAL DEFAULT 0"),
-            ("court_rentals", "checkout_change", "REAL DEFAULT 0"),
-            ("court_rentals", "payment_pending", "INTEGER DEFAULT 0"),
-            ("court_rentals", "payment_pending_amount", "REAL DEFAULT 0"),
-            ("court_rentals", "auto_completed", "INTEGER DEFAULT 0"),
-            ("racket_rentals", "completed_at", "DATETIME"),
-            ("racket_rentals", "overtime_minutes", "INTEGER DEFAULT 0"),
-            ("racket_rentals", "overtime_hours_charged", "INTEGER DEFAULT 0"),
-            ("racket_rentals", "overtime_charge", "REAL DEFAULT 0"),
-            ("racket_rentals", "checkout_payment", "REAL DEFAULT 0"),
-            ("racket_rentals", "checkout_change", "REAL DEFAULT 0"),
-            ("racket_rentals", "payment_pending", "INTEGER DEFAULT 0"),
-            ("racket_rentals", "payment_pending_amount", "REAL DEFAULT 0"),
-            ("racket_rentals", "auto_completed", "INTEGER DEFAULT 0"),
+            ("court_rentals", "completed_at", t["datetime"]),
+            ("court_rentals", "overtime_minutes", f"{t['int']} DEFAULT 0"),
+            ("court_rentals", "overtime_hours_charged", f"{t['int']} DEFAULT 0"),
+            ("court_rentals", "overtime_charge", f"{t['real']} DEFAULT 0"),
+            ("court_rentals", "checkout_payment", f"{t['real']} DEFAULT 0"),
+            ("court_rentals", "checkout_change", f"{t['real']} DEFAULT 0"),
+            ("court_rentals", "payment_pending", t["bool_false"]),
+            ("court_rentals", "payment_pending_amount", f"{t['real']} DEFAULT 0"),
+            ("court_rentals", "auto_completed", t["bool_false"]),
+            ("racket_rentals", "completed_at", t["datetime"]),
+            ("racket_rentals", "overtime_minutes", f"{t['int']} DEFAULT 0"),
+            ("racket_rentals", "overtime_hours_charged", f"{t['int']} DEFAULT 0"),
+            ("racket_rentals", "overtime_charge", f"{t['real']} DEFAULT 0"),
+            ("racket_rentals", "checkout_payment", f"{t['real']} DEFAULT 0"),
+            ("racket_rentals", "checkout_change", f"{t['real']} DEFAULT 0"),
+            ("racket_rentals", "payment_pending", t["bool_false"]),
+            ("racket_rentals", "payment_pending_amount", f"{t['real']} DEFAULT 0"),
+            ("racket_rentals", "auto_completed", t["bool_false"]),
         ]
         amount_billed_migrated: list[str] = []
         for table, column, ddl in [
-            ("court_rentals", "promo_id", "INTEGER"),
-            ("court_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
-            ("court_rentals", "amount_billed", "REAL"),
-            ("racket_rentals", "promo_id", "INTEGER"),
-            ("racket_rentals", "bonus_minutes", "INTEGER DEFAULT 0"),
-            ("racket_rentals", "amount_billed", "REAL"),
+            ("court_rentals", "promo_id", t["int"]),
+            ("court_rentals", "bonus_minutes", f"{t['int']} DEFAULT 0"),
+            ("court_rentals", "amount_billed", t["real"]),
+            ("racket_rentals", "promo_id", t["int"]),
+            ("racket_rentals", "bonus_minutes", f"{t['int']} DEFAULT 0"),
+            ("racket_rentals", "amount_billed", t["real"]),
             *rental_completion_cols,
         ]:
             if table not in tables:
@@ -152,18 +190,26 @@ def migrate_db():
                 continue
             cols = {c["name"] for c in insp.get_columns(table)}
             if "auto_completed" in cols and "payment_pending" in cols:
-                conn.execute(
-                    text(
-                        f"UPDATE {table} SET auto_completed = 1 "
-                        "WHERE status = 'completed' AND payment_pending = 1"
+                if _is_sqlite:
+                    conn.execute(
+                        text(
+                            f"UPDATE {table} SET auto_completed = 1 "
+                            "WHERE status = 'completed' AND payment_pending = 1"
+                        )
                     )
-                )
+                else:
+                    conn.execute(
+                        text(
+                            f"UPDATE {table} SET auto_completed = TRUE "
+                            "WHERE status = 'completed' AND payment_pending = TRUE"
+                        )
+                    )
 
         if "system_settings" in tables:
             settings_cols = {c["name"] for c in insp.get_columns("system_settings")}
             booking_policy_cols = [
-                ("allow_cancel_unpaid_booking", "INTEGER DEFAULT 1"),
-                ("allow_cancel_paid_booking", "INTEGER DEFAULT 0"),
+                ("allow_cancel_unpaid_booking", t["bool_true"]),
+                ("allow_cancel_paid_booking", t["bool_false"]),
             ]
             for column, ddl in booking_policy_cols:
                 if column not in settings_cols:
@@ -171,17 +217,19 @@ def migrate_db():
                         text(f"ALTER TABLE system_settings ADD COLUMN {column} {ddl}")
                     )
 
-        # Prepaid auto-completions were incorrectly flagged for overtime-only collection.
         for table in ("court_rentals", "racket_rentals"):
             if table not in tables:
                 continue
             cols = {c["name"] for c in insp.get_columns(table)}
             if "payment_pending" not in cols:
                 continue
+            pending_true = "payment_pending = 1" if _is_sqlite else "payment_pending = TRUE"
+            pending_false = "payment_pending = 0" if _is_sqlite else "payment_pending = FALSE"
+            auto_true = "auto_completed = 1" if _is_sqlite else "auto_completed = TRUE"
             conn.execute(
                 text(
-                    f"UPDATE {table} SET payment_pending = 0, payment_pending_amount = 0 "
-                    "WHERE payment_pending = 1 AND auto_completed = 1 "
+                    f"UPDATE {table} SET {pending_false}, payment_pending_amount = 0 "
+                    f"WHERE {pending_true} AND {auto_true} "
                     "AND COALESCE(overtime_charge, 0) > 0 "
                     "AND payment_pending_amount <= COALESCE(overtime_charge, 0) + 0.01 "
                     "AND payment_pending_amount < COALESCE(amount_billed, 0) - 0.01"
@@ -205,3 +253,4 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     migrate_db()
+    logger.info("Database ready (%s)", database_backend_label())

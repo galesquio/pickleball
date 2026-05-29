@@ -108,6 +108,8 @@ def validate_rental_payment(amount_billed: float, payment_received: float) -> fl
 
 def apply_active_rental_payment(rental, payment_received: float) -> float:
     """Apply payment toward the base rental balance while the rental is still active."""
+    if getattr(rental, "payment_pending", False):
+        raise ValueError("This rental is awaiting cash collection — use Cash collected")
     balance = rental_balance_due(rental)
     payment = round(max(0.0, float(payment_received)), 2)
     if payment <= 0:
@@ -610,6 +612,8 @@ def _finalize_completion(
     event_type: str,
     entity_type: str,
 ):
+    if getattr(rental, "payment_pending", False):
+        raise ValueError("Use Cash collected to record payment for this rental")
     settings = get_settings(db)
     completed_at = facility_now()
     overtime = compute_overtime(rental.ends_at, rental_type, settings, completed_at)
@@ -819,25 +823,59 @@ def preview_racket_completion(db: Session, rental_id: int) -> dict:
     return build_completion_preview(db, rental, "racket", name)
 
 
+def _rental_item_name(rental, rental_type: str) -> str:
+    if rental_type == "court":
+        return rental.court.name if rental.court else f"Court #{rental.court_id}"
+    return rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
+
+
+def _flag_started_unpaid_for_collection(
+    db: Session,
+    rental,
+    rental_type: str,
+) -> bool:
+    """When a rental has started with an unpaid balance, flag it for cash collection."""
+    if rental.status != "active" or rental.started_at > facility_now():
+        return False
+    if rental.payment_pending:
+        return False
+
+    balance_due = rental_balance_due(rental)
+    if balance_due <= 0.009:
+        return False
+
+    cash_owed = balance_due
+    rental.amount_paid = rental_amount_billed(rental)
+    rental.payment_pending = True
+    rental.payment_pending_amount = cash_owed
+
+    item_name = _rental_item_name(rental, rental_type)
+    entity_type = "court_rental" if rental_type == "court" else "racket_rental"
+    event_type = "COURT_COLLECT_PENDING" if rental_type == "court" else "RACKET_COLLECT_PENDING"
+    log_event(
+        db,
+        event_type,
+        f"{item_name} rental #{rental.id} started for {rental.customer_name}: "
+        f"system marked paid — collect {cash_owed:.2f} cash",
+        None,
+        entity_type,
+        rental.id,
+    )
+    return True
+
+
 def _auto_complete_expired_rental(
     db: Session,
     rental,
     rental_type: str,
     settings,
 ) -> bool:
-    """Complete a rental past its end time.
-
-    Only rentals with an unpaid base balance at expiry are flagged for cash collection
-    (payment_pending). Prepaid bookings complete without a collect-cash tag even if overtime applies.
-    """
+    """Complete a rental past its end time; add overtime to any pending collection."""
     if rental.status != "active" or rental.ends_at > facility_now():
         return False
 
-    balance_due = rental_balance_due(rental)
     completed_at = facility_now()
     overtime = compute_overtime(rental.ends_at, rental_type, settings, completed_at)
-    unpaid_base = balance_due > 0.009
-    cash_still_owed = round(balance_due + overtime.overtime_charge, 2) if unpaid_base else 0.0
 
     rental.auto_completed = True
     rental.completed_at = completed_at
@@ -845,10 +883,27 @@ def _auto_complete_expired_rental(
     rental.overtime_hours_charged = overtime.overtime_hours_charged
     rental.overtime_charge = overtime.overtime_charge
 
-    if unpaid_base and cash_still_owed > 0.009:
+    collect_note = ""
+    if rental.payment_pending:
+        pending = float(rental.payment_pending_amount or 0)
+        rental.payment_pending_amount = round(pending + overtime.overtime_charge, 2)
         rental.amount_paid = rental_total_amount(rental)
-        rental.payment_pending = True
-        rental.payment_pending_amount = cash_still_owed
+        if rental.payment_pending_amount > 0.009:
+            collect_note = (
+                f"; collect {rental.payment_pending_amount:.2f} cash from customer"
+            )
+    else:
+        balance_due = rental_balance_due(rental)
+        unpaid_base = balance_due > 0.009
+        cash_still_owed = (
+            round(balance_due + overtime.overtime_charge, 2) if unpaid_base else 0.0
+        )
+        if unpaid_base and cash_still_owed > 0.009:
+            rental.amount_paid = rental_total_amount(rental)
+            rental.payment_pending = True
+            rental.payment_pending_amount = cash_still_owed
+            collect_note = f"; system marked paid — collect {cash_still_owed:.2f} cash from customer"
+
     rental.checkout_payment = 0
     rental.checkout_change = 0
     rental.status = "completed"
@@ -856,64 +911,82 @@ def _auto_complete_expired_rental(
     if rental_type == "racket" and rental.racket:
         rental.racket.status = "available"
 
-    if rental_type == "court":
-        item_name = rental.court.name if rental.court else f"Court #{rental.court_id}"
-        event_type = "COURT_AUTO_COMPLETED"
-        entity_type = "court_rental"
-    else:
-        item_name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
-        event_type = "RACKET_AUTO_COMPLETED"
-        entity_type = "racket_rental"
+    item_name = _rental_item_name(rental, rental_type)
+    event_type = "COURT_AUTO_COMPLETED" if rental_type == "court" else "RACKET_AUTO_COMPLETED"
+    entity_type = "court_rental" if rental_type == "court" else "racket_rental"
 
     total = rental_total_amount(rental)
-    note = f"{item_name} rental #{rental.id} auto-completed for {rental.customer_name} (total {total:.2f})"
-    if unpaid_base and cash_still_owed > 0.009:
-        note += (
-            f"; system marked paid — collect {cash_still_owed:.2f} cash from customer"
-        )
+    note = (
+        f"{item_name} rental #{rental.id} auto-completed for {rental.customer_name} "
+        f"(total {total:.2f}{collect_note})"
+    )
     log_event(db, event_type, note, None, entity_type, rental.id)
     return True
 
 
 def auto_complete_expired_rentals(db: Session) -> int:
-    """Auto-complete active rentals past end time. Returns count completed."""
+    """Flag started unpaid rentals for collection; auto-complete rentals past end time."""
     settings = get_settings(db)
-    count = 0
+    now = facility_now()
+    changed = 0
+
+    started_court = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court))
+        .filter(CourtRental.status == "active", CourtRental.started_at <= now)
+        .all()
+    )
+    for rental in started_court:
+        if _flag_started_unpaid_for_collection(db, rental, "court"):
+            changed += 1
+
+    started_racket = (
+        db.query(RacketRental)
+        .options(joinedload(RacketRental.racket))
+        .filter(RacketRental.status == "active", RacketRental.started_at <= now)
+        .all()
+    )
+    for rental in started_racket:
+        if _flag_started_unpaid_for_collection(db, rental, "racket"):
+            changed += 1
 
     court_rentals = (
         db.query(CourtRental)
         .options(joinedload(CourtRental.court))
-        .filter(CourtRental.status == "active", CourtRental.ends_at <= facility_now())
+        .filter(CourtRental.status == "active", CourtRental.ends_at <= now)
         .all()
     )
     for rental in court_rentals:
         if _auto_complete_expired_rental(db, rental, "court", settings):
-            count += 1
+            changed += 1
 
     racket_rentals = (
         db.query(RacketRental)
         .options(joinedload(RacketRental.racket))
-        .filter(RacketRental.status == "active", RacketRental.ends_at <= facility_now())
+        .filter(RacketRental.status == "active", RacketRental.ends_at <= now)
         .all()
     )
     for rental in racket_rentals:
         if _auto_complete_expired_rental(db, rental, "racket", settings):
-            count += 1
+            changed += 1
 
-    if count:
+    if changed:
         db.commit()
-    return count
+    return changed
 
 
 def confirm_court_collection(db: Session, rental_id: int, user: User) -> CourtRental:
     rental = (
         db.query(CourtRental)
         .options(joinedload(CourtRental.court))
-        .filter(CourtRental.id == rental_id, CourtRental.status == "completed")
+        .filter(
+            CourtRental.id == rental_id,
+            CourtRental.status.in_(["active", "completed"]),
+        )
         .first()
     )
     if not rental:
-        raise ValueError("Completed rental not found")
+        raise ValueError("Rental not found")
     if not rental.payment_pending:
         raise ValueError("No pending collection on this rental")
     amount = float(rental.payment_pending_amount or 0)
@@ -936,11 +1009,14 @@ def confirm_racket_collection(db: Session, rental_id: int, user: User) -> Racket
     rental = (
         db.query(RacketRental)
         .options(joinedload(RacketRental.racket))
-        .filter(RacketRental.id == rental_id, RacketRental.status == "completed")
+        .filter(
+            RacketRental.id == rental_id,
+            RacketRental.status.in_(["active", "completed"]),
+        )
         .first()
     )
     if not rental:
-        raise ValueError("Completed rental not found")
+        raise ValueError("Rental not found")
     if not rental.payment_pending:
         raise ValueError("No pending collection on this rental")
     amount = float(rental.payment_pending_amount or 0)

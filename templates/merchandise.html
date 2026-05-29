@@ -23,18 +23,18 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="p-4 lg:p-8 max-w-screen-2xl mx-auto w-full h-full flex flex-col min-h-0">
+<div class="p-4 lg:p-8 max-w-screen-2xl mx-auto w-full lg:h-full lg:flex lg:flex-col lg:min-h-0">
 
-  <div class="mb-4 shrink-0">
+  <div class="mb-4 lg:shrink-0">
     <h1 class="text-2xl font-bold text-gray-900">Merchandise Sales</h1>
     <p class="text-gray-500 text-sm mt-0.5">Sell water, towels, balls, rackets and more</p>
   </div>
 
-  <div class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-5 gap-4 lg:gap-6">
+  <div class="grid grid-cols-1 lg:grid-cols-5 lg:flex-1 lg:min-h-0 gap-4 lg:gap-6">
 
     <!-- Products -->
-    <div class="lg:col-span-3 flex flex-col min-h-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div class="px-4 py-3 border-b border-gray-100 flex items-center gap-3 shrink-0">
+    <div class="lg:col-span-3 lg:flex lg:flex-col lg:min-h-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div class="px-4 py-3 border-b border-gray-100 flex items-center gap-3 lg:shrink-0">
         <input type="search" id="product-search" placeholder="Search products…"
           class="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none">
         <select id="category-filter" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 focus:ring-2 focus:ring-violet-500 outline-none">
@@ -46,22 +46,22 @@
           <option value="other">Other</option>
         </select>
       </div>
-      <div id="product-grid" class="flex-1 overflow-y-auto p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
+      <div id="product-grid" class="p-4 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 content-start lg:flex-1 lg:overflow-y-auto">
         <div class="col-span-full text-center text-gray-400 py-12 text-sm">Loading products…</div>
       </div>
     </div>
 
     <!-- Cart -->
-    <div class="lg:col-span-2 flex flex-col min-h-0 bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
-      <div class="px-4 py-3 border-b border-violet-100 bg-violet-50 shrink-0">
+    <div class="lg:col-span-2 lg:flex lg:flex-col lg:min-h-0 bg-white border border-violet-200 rounded-xl overflow-hidden shadow-sm">
+      <div class="px-4 py-3 border-b border-violet-100 bg-violet-50 lg:shrink-0">
         <h2 class="font-semibold text-violet-900 text-sm">Cart</h2>
       </div>
 
-      <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-2 min-h-[120px]">
+      <div id="cart-items" class="p-4 space-y-2 lg:flex-1 lg:overflow-y-auto">
         <p class="text-sm text-gray-400 text-center py-8">Tap a product to add to cart</p>
       </div>
 
-      <div class="border-t border-gray-100 p-4 space-y-3 shrink-0 bg-gray-50">
+      <div class="border-t border-gray-100 p-4 space-y-3 lg:shrink-0 bg-gray-50">
         <div class="flex justify-between text-sm">
           <span class="text-gray-600">Subtotal</span>
           <span id="cart-subtotal" class="font-bold text-gray-900">{{ currency }}0</span>

@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from config import facility_now
@@ -21,7 +22,7 @@ from overtime_service import (
     get_settings,
     rental_timing_payload,
 )
-from promo_service import compute_rental_terms, find_best_promo, promo_summary
+from promo_service import compute_rental_terms, find_best_promo, promo_summary, quote_rental_by_duration
 
 
 def log_event(
@@ -59,8 +60,40 @@ def rental_balance_due(rental) -> float:
     return round(max(0.0, rental_amount_billed(rental) - float(rental.amount_paid or 0)), 2)
 
 
+def rental_cash_pending(rental) -> float:
+    if getattr(rental, "payment_pending", False):
+        return round(float(rental.payment_pending_amount or 0), 2)
+    if rental.status == "active":
+        return rental_balance_due(rental)
+    return 0.0
+
+
 def rental_total_amount(rental) -> float:
     return round(rental_amount_billed(rental) + float(rental.overtime_charge or 0), 2)
+
+
+def rental_sales_revenue(rental) -> float:
+    """Revenue counted in sales (independent of physical cash collection)."""
+    return rental_total_amount(rental)
+
+
+def sales_period_filter(query, model, start, end, statuses):
+    """Include rentals booked or completed/swap-finished in the date range."""
+    completed_statuses = [s for s in statuses if s in ("completed", "swapped")]
+    period = or_(
+        and_(model.created_at >= start, model.created_at < end),
+    )
+    if completed_statuses:
+        period = or_(
+            period,
+            and_(
+                model.completed_at.isnot(None),
+                model.completed_at >= start,
+                model.completed_at < end,
+                model.status.in_(completed_statuses),
+            ),
+        )
+    return query.filter(period, model.status.in_(statuses))
 
 
 def validate_rental_payment(amount_billed: float, payment_received: float) -> float:
@@ -224,12 +257,12 @@ def create_court_rental(
         raise ValueError("Invalid time option")
 
     started_at = facility_now()
-    promo = find_best_promo(db, "court", time_option_id, started_at)
-    duration_minutes, amount_billed, bonus_minutes = compute_rental_terms(option, promo)
-    if amount_billed <= 0:
+    promo = find_best_promo(db, "court", option, started_at)
+    terms = compute_rental_terms(option, promo, db)
+    if terms.amount_billed <= 0:
         raise ValueError("Time option has no price configured")
-    payment = validate_rental_payment(amount_billed, payment_received)
-    ends_at = started_at + timedelta(minutes=duration_minutes)
+    payment = validate_rental_payment(terms.amount_billed, payment_received)
+    ends_at = started_at + timedelta(minutes=terms.play_duration_minutes)
     rental = CourtRental(
         court_id=court_id,
         time_option_id=time_option_id,
@@ -239,9 +272,9 @@ def create_court_rental(
         started_at=started_at,
         ends_at=ends_at,
         status="active",
-        amount_billed=amount_billed,
+        amount_billed=terms.amount_billed,
         amount_paid=payment,
-        bonus_minutes=bonus_minutes,
+        bonus_minutes=terms.bonus_minutes,
     )
     db.add(rental)
     db.commit()
@@ -254,8 +287,8 @@ def create_court_rental(
     log_event(
         db,
         "COURT_RENTED",
-        f"Court {court.name} rented to {customer_name} for {promo_summary(promo, option) if promo else option.label}{promo_note} "
-        f"(billed {amount_billed:.2f}{pay_note})",
+        f"Court {court.name} rented to {customer_name} for {promo_summary(promo, option, terms) if promo else option.label}{promo_note} "
+        f"(billed {terms.amount_billed:.2f}{pay_note})",
         cashier.id,
         "court_rental",
         rental.id,
@@ -264,13 +297,139 @@ def create_court_rental(
     return rental
 
 
+def compute_greedy_amount(db: Session, duration_hours: int, rental_type: str = "court") -> tuple:
+    """Price by duration with promos when eligible, otherwise greedy option stacking."""
+    quote = quote_rental_by_duration(db, rental_type, duration_hours)
+    return quote.amount_billed, quote.breakdown, quote.primary_option
+
+
+def create_court_rental_schedule(
+    db: Session,
+    court_id: int,
+    customer_name: str,
+    start_time: datetime,
+    duration_hours: int,
+    cashier: User,
+    payment_received: float = 0.0,
+) -> CourtRental:
+    court = db.query(Court).filter(Court.id == court_id, Court.is_active.is_(True)).first()
+    if not court:
+        raise ValueError("Court not found or inactive")
+
+    quote = quote_rental_by_duration(db, "court", duration_hours, start_time)
+    play_minutes = quote.play_duration_minutes
+    ends_at = start_time + timedelta(minutes=play_minutes)
+
+    overlap = (
+        db.query(CourtRental)
+        .filter(
+            CourtRental.court_id == court_id,
+            CourtRental.status == "active",
+            CourtRental.started_at < ends_at,
+            CourtRental.ends_at > start_time,
+        )
+        .first()
+    )
+    if overlap:
+        raise ValueError(f"Court already has an active booking that overlaps this time slot")
+
+    payment = validate_rental_payment(quote.amount_billed, payment_received)
+
+    rental = CourtRental(
+        court_id=court_id,
+        time_option_id=quote.primary_option.id,
+        promo_id=quote.promo.id if quote.promo else None,
+        cashier_id=cashier.id,
+        customer_name=customer_name.strip(),
+        started_at=start_time,
+        ends_at=ends_at,
+        status="active",
+        amount_billed=quote.amount_billed,
+        amount_paid=payment,
+        bonus_minutes=quote.bonus_minutes,
+    )
+    db.add(rental)
+    db.commit()
+    db.refresh(rental)
+
+    balance = rental_balance_due(rental)
+    promo_note = f" ({quote.promo.name})" if quote.promo else ""
+    log_event(
+        db,
+        "COURT_RENTED",
+        f"Court {court.name} rented to {customer_name} for {quote.plan_label}{promo_note} "
+        f"(billed {quote.amount_billed:.2f}, paid {payment:.2f}"
+        + (f", balance {balance:.2f}" if balance > 0 else "")
+        + ")",
+        cashier.id,
+        "court_rental",
+        rental.id,
+    )
+    db.commit()
+    return rental
+
+
+def rental_is_upcoming(rental) -> bool:
+    return rental.started_at > facility_now()
+
+
+def can_cancel_court_booking(rental, settings) -> tuple[bool, str]:
+    if rental.status != "active":
+        return False, "Only active bookings can be cancelled"
+    if not rental_is_upcoming(rental):
+        return False, "Cannot cancel a booking that has already started"
+    paid = rental_balance_due(rental) <= 0.009
+    if paid and not settings.allow_cancel_paid_booking:
+        return False, "Paid bookings cannot be cancelled (facility policy)"
+    if not paid and not settings.allow_cancel_unpaid_booking:
+        return False, "Unpaid bookings cannot be cancelled (facility policy)"
+    return True, ""
+
+
+def cancel_court_rental(db: Session, rental_id: int, cashier: User) -> CourtRental:
+    rental = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court))
+        .filter(CourtRental.id == rental_id)
+        .first()
+    )
+    if not rental:
+        raise ValueError("Booking not found")
+
+    settings = get_settings(db)
+    allowed, reason = can_cancel_court_booking(rental, settings)
+    if not allowed:
+        raise ValueError(reason)
+
+    court_name = rental.court.name if rental.court else f"Court #{rental.court_id}"
+    paid = float(rental.amount_paid or 0)
+    rental.status = "cancelled"
+    log_event(
+        db,
+        "COURT_BOOKING_CANCELLED",
+        (
+            f"Cancelled upcoming booking for {rental.customer_name} on {court_name} "
+            f"({rental.started_at.strftime('%Y-%m-%d %H:%M')} – "
+            f"{rental.ends_at.strftime('%H:%M')}, billed {rental.amount_billed:.2f}, "
+            f"paid {paid:.2f})"
+        ),
+        cashier.id,
+        "court_rental",
+        rental.id,
+    )
+    db.commit()
+    db.refresh(rental)
+    return rental
+
+
 def create_racket_rental(
     db: Session,
     racket_id: int,
-    time_option_id: int,
     customer_name: str,
     cashier: User,
     payment_received: float = 0.0,
+    time_option_id: int | None = None,
+    duration_hours: int | None = None,
 ) -> RacketRental:
     racket = (
         db.query(Racket)
@@ -284,23 +443,46 @@ def create_racket_rental(
     if get_active_racket_rental(db, racket_id):
         raise ValueError("Racket is already rented")
 
-    option = (
-        db.query(RentalTimeOption)
-        .filter(
-            RentalTimeOption.id == time_option_id,
-            RentalTimeOption.type == "racket",
-            RentalTimeOption.is_active.is_(True),
-        )
-        .first()
-    )
-    if not option:
-        raise ValueError("Invalid time option")
+    if duration_hours is not None and time_option_id is not None:
+        raise ValueError("Provide either duration_hours or time_option_id, not both")
+    if duration_hours is None and time_option_id is None:
+        raise ValueError("duration_hours or time_option_id is required")
 
     started_at = facility_now()
-    promo = find_best_promo(db, "racket", time_option_id, started_at)
-    duration_minutes, amount_billed, bonus_minutes = compute_rental_terms(option, promo)
-    if amount_billed <= 0:
-        raise ValueError("Time option has no price configured")
+    promo = None
+    bonus_minutes = 0
+
+    if duration_hours is not None:
+        quote = quote_rental_by_duration(db, "racket", duration_hours, started_at)
+        if quote.amount_billed <= 0:
+            raise ValueError("No price configured for this duration")
+        promo = quote.promo
+        amount_billed = quote.amount_billed
+        duration_minutes = quote.play_duration_minutes
+        bonus_minutes = quote.bonus_minutes
+        time_option_id = quote.primary_option.id
+        plan_label = quote.plan_label
+    else:
+        option = (
+            db.query(RentalTimeOption)
+            .filter(
+                RentalTimeOption.id == time_option_id,
+                RentalTimeOption.type == "racket",
+                RentalTimeOption.is_active.is_(True),
+            )
+            .first()
+        )
+        if not option:
+            raise ValueError("Invalid time option")
+        promo = find_best_promo(db, "racket", option, started_at)
+        terms = compute_rental_terms(option, promo, db)
+        if terms.amount_billed <= 0:
+            raise ValueError("Time option has no price configured")
+        amount_billed = terms.amount_billed
+        duration_minutes = terms.play_duration_minutes
+        bonus_minutes = terms.bonus_minutes
+        plan_label = promo_summary(promo, option, terms) if promo else option.label
+
     payment = validate_rental_payment(amount_billed, payment_received)
     ends_at = started_at + timedelta(minutes=duration_minutes)
     rental = RacketRental(
@@ -328,7 +510,7 @@ def create_racket_rental(
     log_event(
         db,
         "RACKET_RENTED",
-        f"Racket {racket.name} rented to {customer_name} for {promo_summary(promo, option) if promo else option.label}{promo_note} "
+        f"Racket {racket.name} rented to {customer_name} for {plan_label}{promo_note} "
         f"(billed {amount_billed:.2f}{pay_note})",
         cashier.id,
         "racket_rental",
@@ -635,3 +817,143 @@ def preview_racket_completion(db: Session, rental_id: int) -> dict:
         raise ValueError("Active rental not found")
     name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
     return build_completion_preview(db, rental, "racket", name)
+
+
+def _auto_complete_expired_rental(
+    db: Session,
+    rental,
+    rental_type: str,
+    settings,
+) -> bool:
+    """Complete a rental past its end time.
+
+    Only rentals with an unpaid base balance at expiry are flagged for cash collection
+    (payment_pending). Prepaid bookings complete without a collect-cash tag even if overtime applies.
+    """
+    if rental.status != "active" or rental.ends_at > facility_now():
+        return False
+
+    balance_due = rental_balance_due(rental)
+    completed_at = facility_now()
+    overtime = compute_overtime(rental.ends_at, rental_type, settings, completed_at)
+    unpaid_base = balance_due > 0.009
+    cash_still_owed = round(balance_due + overtime.overtime_charge, 2) if unpaid_base else 0.0
+
+    rental.auto_completed = True
+    rental.completed_at = completed_at
+    rental.overtime_minutes = overtime.excess_minutes
+    rental.overtime_hours_charged = overtime.overtime_hours_charged
+    rental.overtime_charge = overtime.overtime_charge
+
+    if unpaid_base and cash_still_owed > 0.009:
+        rental.amount_paid = rental_total_amount(rental)
+        rental.payment_pending = True
+        rental.payment_pending_amount = cash_still_owed
+    rental.checkout_payment = 0
+    rental.checkout_change = 0
+    rental.status = "completed"
+
+    if rental_type == "racket" and rental.racket:
+        rental.racket.status = "available"
+
+    if rental_type == "court":
+        item_name = rental.court.name if rental.court else f"Court #{rental.court_id}"
+        event_type = "COURT_AUTO_COMPLETED"
+        entity_type = "court_rental"
+    else:
+        item_name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
+        event_type = "RACKET_AUTO_COMPLETED"
+        entity_type = "racket_rental"
+
+    total = rental_total_amount(rental)
+    note = f"{item_name} rental #{rental.id} auto-completed for {rental.customer_name} (total {total:.2f})"
+    if unpaid_base and cash_still_owed > 0.009:
+        note += (
+            f"; system marked paid — collect {cash_still_owed:.2f} cash from customer"
+        )
+    log_event(db, event_type, note, None, entity_type, rental.id)
+    return True
+
+
+def auto_complete_expired_rentals(db: Session) -> int:
+    """Auto-complete active rentals past end time. Returns count completed."""
+    settings = get_settings(db)
+    count = 0
+
+    court_rentals = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court))
+        .filter(CourtRental.status == "active", CourtRental.ends_at <= facility_now())
+        .all()
+    )
+    for rental in court_rentals:
+        if _auto_complete_expired_rental(db, rental, "court", settings):
+            count += 1
+
+    racket_rentals = (
+        db.query(RacketRental)
+        .options(joinedload(RacketRental.racket))
+        .filter(RacketRental.status == "active", RacketRental.ends_at <= facility_now())
+        .all()
+    )
+    for rental in racket_rentals:
+        if _auto_complete_expired_rental(db, rental, "racket", settings):
+            count += 1
+
+    if count:
+        db.commit()
+    return count
+
+
+def confirm_court_collection(db: Session, rental_id: int, user: User) -> CourtRental:
+    rental = (
+        db.query(CourtRental)
+        .options(joinedload(CourtRental.court))
+        .filter(CourtRental.id == rental_id, CourtRental.status == "completed")
+        .first()
+    )
+    if not rental:
+        raise ValueError("Completed rental not found")
+    if not rental.payment_pending:
+        raise ValueError("No pending collection on this rental")
+    amount = float(rental.payment_pending_amount or 0)
+    rental.payment_pending = False
+    rental.payment_pending_amount = 0
+    item_name = rental.court.name if rental.court else f"Court #{rental.court_id}"
+    log_event(
+        db,
+        "COURT_COLLECTION",
+        f"{item_name} rental #{rental.id}: collected {amount:.2f} cash from {rental.customer_name}",
+        user.id,
+        "court_rental",
+        rental.id,
+    )
+    db.commit()
+    return rental
+
+
+def confirm_racket_collection(db: Session, rental_id: int, user: User) -> RacketRental:
+    rental = (
+        db.query(RacketRental)
+        .options(joinedload(RacketRental.racket))
+        .filter(RacketRental.id == rental_id, RacketRental.status == "completed")
+        .first()
+    )
+    if not rental:
+        raise ValueError("Completed rental not found")
+    if not rental.payment_pending:
+        raise ValueError("No pending collection on this rental")
+    amount = float(rental.payment_pending_amount or 0)
+    rental.payment_pending = False
+    rental.payment_pending_amount = 0
+    item_name = rental.racket.name if rental.racket else f"Racket #{rental.racket_id}"
+    log_event(
+        db,
+        "RACKET_COLLECTION",
+        f"{item_name} rental #{rental.id}: collected {amount:.2f} cash from {rental.customer_name}",
+        user.id,
+        "racket_rental",
+        rental.id,
+    )
+    db.commit()
+    return rental

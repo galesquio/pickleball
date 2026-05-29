@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -11,10 +11,19 @@ class CourtRentRequest(BaseModel):
     payment_received: float = Field(ge=0, default=0)
 
 
+class CourtScheduleRentRequest(BaseModel):
+    court_id: int
+    customer_name: str = Field(min_length=1, max_length=128)
+    start_time: datetime
+    duration_hours: int = Field(ge=1, le=24)
+    payment_received: float = Field(ge=0, default=0)
+
+
 class RacketRentRequest(BaseModel):
     racket_id: int
     customer_name: str = Field(min_length=1, max_length=128)
-    time_option_id: int
+    time_option_id: Optional[int] = None
+    duration_hours: Optional[int] = Field(default=None, ge=1, le=24)
     payment_received: float = Field(ge=0, default=0)
 
 

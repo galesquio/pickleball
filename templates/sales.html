@@ -2,7 +2,7 @@
 {% block title %}Sales — Pickleball{% endblock %}
 {% block head %}{% endblock %}
 {% block content %}
-<div class="p-6 lg:p-8 max-w-screen-xl">
+<div class="p-6 lg:p-8 max-w-screen-xl mx-auto w-full">
 
   <!-- Header -->
   <div class="mb-6">
@@ -154,7 +154,11 @@ async function loadSummary() {
   const type = document.getElementById('filter-type').value;
   const res = await fetch(`/api/sales/summary?from=${dateFrom}&to=${dateTo}&type=${type}`);
   const data = await res.json();
-  document.getElementById('stat-total').textContent = CURRENCY + Math.round(data.total);
+  let totalLabel = CURRENCY + Math.round(data.total);
+  if (data.pending_collection > 0) {
+    totalLabel += ` · ${CURRENCY}${Math.round(data.pending_collection)} to collect`;
+  }
+  document.getElementById('stat-total').textContent = totalLabel;
   document.getElementById('stat-court').textContent = CURRENCY + Math.round(data.court_total);
   document.getElementById('stat-racket').textContent = CURRENCY + Math.round(data.racket_total);
   document.getElementById('stat-count').textContent = data.transaction_count;
@@ -171,9 +175,17 @@ async function loadTransactions() {
     const badge = item.type === 'court'
       ? `<span class="text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">Court</span>`
       : `<span class="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Racket</span>`;
-    const statusBadge = item.status === 'active'
-      ? `<span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">${item.status}</span>`
-      : `<span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">${item.status}</span>`;
+    let statusBadge;
+    if (item.payment_pending) {
+      statusBadge = `<span class="flex flex-wrap gap-1">
+        <span class="text-xs font-medium text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">${item.status}</span>
+        <span class="text-xs font-medium text-orange-800 bg-orange-100 border border-orange-300 px-2 py-0.5 rounded-full" title="Counted in sales — collect ${CURRENCY}${Math.round(item.payment_pending_amount)}">Collect cash</span>
+      </span>`;
+    } else if (item.status === 'active') {
+      statusBadge = `<span class="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">${item.status}</span>`;
+    } else {
+      statusBadge = `<span class="text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full">${item.status}</span>`;
+    }
     const dt = new Date(item.datetime).toLocaleString();
     const overtime = item.overtime_charge > 0
       ? `<span class="text-red-700 font-semibold">${CURRENCY}${Math.round(item.overtime_charge)}</span>`

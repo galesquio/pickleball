@@ -18,5 +18,6 @@ def sales_page(request: Request, db=Depends(get_db)):
         {
             "user": user,
             "currency": "₱",
+            "is_admin": user.role == "admin",
         },
     )

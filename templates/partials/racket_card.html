@@ -46,7 +46,15 @@
         <span class="text-gray-400">Plan</span>
         {% if card.status == 'rented' %}
         <span class="text-gray-700 block">
-          {{ card.rental.time_option.label }}{% if card.rental.bonus_minutes %} <span class="text-violet-600">+{{ card.rental.bonus_minutes // 60 }}h</span>{% endif %}
+          {% set rental_mins = ((card.rental.ends_at - card.rental.started_at).total_seconds() / 60) | int %}
+          {% if rental_mins >= 60 and rental_mins % 60 == 0 %}
+          {{ (rental_mins // 60) }}h
+          {% elif rental_mins >= 60 %}
+          {{ (rental_mins // 60) }}h {{ rental_mins % 60 }}m
+          {% else %}
+          {{ rental_mins }}m
+          {% endif %}
+          {% if card.rental.bonus_minutes %} <span class="text-violet-600">+{{ card.rental.bonus_minutes // 60 }}h bonus</span>{% endif %}
         </span>
         {% else %}
         <span class="text-gray-700 block invisible select-none" aria-hidden="true">—</span>

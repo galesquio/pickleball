@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Rackets — Pickleball{% endblock %}
+{% block content %}
+<script>document.body.dataset.warningMinutes = '{{ warning_minutes }}';</script>
+
+{% set rackets_available = racket_cards | selectattr('status', 'equalto', 'available') | list | length %}
+{% set rackets_rented = racket_cards | selectattr('status', 'equalto', 'rented') | list | length %}
+{% set rackets_damaged = racket_cards | selectattr('status', 'equalto', 'damaged') | list | length %}
+
+<div class="p-4 lg:p-8 max-w-screen-xl mx-auto w-full">
+
+  <!-- Header -->
+  <div class="mb-4">
+    <div class="flex items-center justify-between gap-3 mb-1 flex-wrap">
+      <h1 class="text-xl lg:text-2xl font-bold text-gray-900">Racket Rentals</h1>
+      <!-- Compact stats chips -->
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>{{ rackets_available }} free
+        </span>
+        <span class="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>{{ rackets_rented }} rented
+        </span>
+        {% if rackets_damaged > 0 %}
+        <span class="inline-flex items-center gap-1 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-2.5 py-1 rounded-full">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>{{ rackets_damaged }} damaged
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <p class="text-gray-500 text-sm">Manage racket availability and rentals</p>
+  </div>
+
+  {% if active_promos %}
+  <div class="mb-5 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3">
+    <div class="flex items-start gap-2">
+      <span class="text-violet-600 text-sm mt-0.5">🎉</span>
+      <div class="min-w-0 flex-1">
+        <p class="text-xs font-semibold text-violet-800 uppercase tracking-wide">Promotions active now</p>
+        <ul class="mt-1.5 space-y-1">
+          {% for p in active_promos %}
+          <li class="text-sm text-violet-900">
+            <span class="font-semibold">{{ p.name }}</span>
+            <span class="text-violet-700">— {{ p.description or (p.window_start ~ '–' ~ p.window_end) }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Rackets grid -->
+  <div id="rackets-grid" class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
+    {% for card in racket_cards %}
+    {% include "partials/racket_card.html" %}
+    {% endfor %}
+  </div>
+
+  {% if not racket_cards %}
+  <div class="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400">
+    No rackets configured.
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block modals %}
+{% include "partials/modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/countdown.js"></script>
+<script src="/static/js/modals.js"></script>
+{% endblock %}

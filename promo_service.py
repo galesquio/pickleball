@@ -1,5 +1,6 @@
 """Promotion eligibility and rental term calculation."""
 
+from dataclasses import dataclass
 from datetime import date, datetime, time
 from typing import Optional
 
@@ -10,6 +11,27 @@ from models import Promo, RentalTimeOption
 
 PROMO_BONUS_MINUTES = "bonus_minutes"
 PROMO_DISCOUNT_PERCENT = "discount_percent"
+
+
+@dataclass
+class RentalTerms:
+    """Resolved play time and billing for a rental."""
+
+    play_duration_minutes: int
+    amount_billed: float
+    bonus_minutes: int
+    is_extended_bundle: bool = False
+
+
+@dataclass
+class DurationQuote:
+    play_duration_minutes: int
+    amount_billed: float
+    bonus_minutes: int
+    promo: Optional[Promo]
+    primary_option: RentalTimeOption
+    breakdown: list
+    plan_label: str
 
 
 def parse_hhmm(value: str) -> time:
@@ -38,7 +60,7 @@ def _in_time_window(dt: datetime, start: str, end: str) -> bool:
     now_m = minutes_of_day(dt)
     if start_m < end_m:
         return start_m <= now_m < end_m
-    return now_m >= start_m or now_m < end_m
+    return start_m <= now_m or now_m < end_m
 
 
 def _in_date_range(dt: datetime, valid_from: Optional[date], valid_until: Optional[date]) -> bool:
@@ -57,10 +79,27 @@ def _matches_day(dt: datetime, days_of_week: str) -> bool:
     return dt.weekday() in allowed
 
 
-def promo_applies_to_option(promo: Promo, time_option_id: int) -> bool:
+def get_promo_base_option(db: Session, promo: Promo) -> Optional[RentalTimeOption]:
+    if not promo.time_option_id:
+        return None
+    return db.query(RentalTimeOption).filter(RentalTimeOption.id == promo.time_option_id).first()
+
+
+def promo_matches_option(db: Session, promo: Promo, option: RentalTimeOption) -> bool:
+    """True if this promo applies to the selected time option."""
     if promo.time_option_id is None:
         return True
-    return promo.time_option_id == time_option_id
+    if promo.time_option_id == option.id:
+        return True
+    if promo.promo_kind != PROMO_BONUS_MINUTES:
+        return False
+    bonus = promo.bonus_minutes or 0
+    if bonus <= 0:
+        return False
+    base = get_promo_base_option(db, promo)
+    if not base:
+        return False
+    return option.duration_minutes == base.duration_minutes + bonus
 
 
 def is_promo_active_now(promo: Promo, at: Optional[datetime] = None) -> bool:
@@ -77,7 +116,7 @@ def is_promo_active_now(promo: Promo, at: Optional[datetime] = None) -> bool:
 def find_best_promo(
     db: Session,
     rental_type: str,
-    time_option_id: int,
+    option: RentalTimeOption,
     at: Optional[datetime] = None,
 ) -> Optional[Promo]:
     at = at or facility_now()
@@ -90,34 +129,70 @@ def find_best_promo(
     for promo in promos:
         if not is_promo_active_now(promo, at):
             continue
-        if not promo_applies_to_option(promo, time_option_id):
+        if not promo_matches_option(db, promo, option):
             continue
         return promo
     return None
 
 
+def find_bundle_promo_for_duration(
+    db: Session,
+    rental_type: str,
+    duration_minutes: int,
+    at: Optional[datetime] = None,
+) -> tuple[Optional[Promo], Optional[RentalTimeOption]]:
+    """Promo where play duration equals base option + bonus (e.g. 4h = 3h + 1h free)."""
+    at = at or facility_now()
+    promos = (
+        db.query(Promo)
+        .filter(
+            Promo.rental_type == rental_type,
+            Promo.is_active.is_(True),
+            Promo.promo_kind == PROMO_BONUS_MINUTES,
+        )
+        .order_by(Promo.priority.desc(), Promo.id.asc())
+        .all()
+    )
+    for promo in promos:
+        if not is_promo_active_now(promo, at):
+            continue
+        base = get_promo_base_option(db, promo)
+        if not base:
+            continue
+        bonus = promo.bonus_minutes or 0
+        if bonus <= 0:
+            continue
+        if duration_minutes == base.duration_minutes + bonus:
+            return promo, base
+    return None, None
+
+
 def compute_rental_terms(
     option: RentalTimeOption,
     promo: Optional[Promo],
-) -> tuple[int, float, int]:
-    """Returns (total_duration_minutes, amount_billed, bonus_minutes)."""
-    duration = option.duration_minutes
-    price = option.price
-    bonus = 0
-
+    db: Session,
+) -> RentalTerms:
+    """Resolve play duration, billed amount, and bonus minutes."""
     if not promo:
-        return duration, price, bonus
+        return RentalTerms(option.duration_minutes, option.price, 0)
+
+    base = get_promo_base_option(db, promo) if promo.time_option_id else None
 
     if promo.promo_kind == PROMO_BONUS_MINUTES:
         bonus = promo.bonus_minutes or 0
-        return duration + bonus, price, bonus
+        bill_price = base.price if base else option.price
+
+        if base and option.id != base.id and option.duration_minutes == base.duration_minutes + bonus:
+            return RentalTerms(option.duration_minutes, bill_price, 0, is_extended_bundle=True)
+
+        return RentalTerms(option.duration_minutes + bonus, bill_price, bonus)
 
     if promo.promo_kind == PROMO_DISCOUNT_PERCENT:
         pct = max(0, min(100, promo.discount_percent or 0))
-        discounted = round(price * (1 - pct / 100), 2)
-        return duration, discounted, 0
+        discounted = round(option.price * (1 - pct / 100), 2)
+        return RentalTerms(option.duration_minutes, discounted, 0)
 
-    return duration, price, bonus
+    return RentalTerms(option.duration_minutes, option.price, 0)
 
 
 def format_duration_minutes(minutes: int) -> str:
@@ -130,8 +205,12 @@ def format_duration_minutes(minutes: int) -> str:
     return f"{hours}h {mins}m"
 
 
-def promo_summary(promo: Promo, option: RentalTimeOption) -> str:
+def promo_summary(promo: Promo, option: RentalTimeOption, terms: Optional[RentalTerms] = None) -> str:
     if promo.promo_kind == PROMO_BONUS_MINUTES and promo.bonus_minutes:
+        if terms and terms.is_extended_bundle:
+            base = promo.time_option
+            base_label = base.label if base else "promo rate"
+            return f"Pay {base_label}, play {option.label}"
         hours = promo.bonus_minutes // 60
         mins = promo.bonus_minutes % 60
         extra = f"+{hours}h" if mins == 0 else f"+{hours}h {mins}m" if hours else f"+{mins}m"
@@ -156,20 +235,121 @@ def promo_hints_for_options(
     at = at or facility_now()
     hints: dict[int, dict] = {}
     for opt in options:
-        promo = find_best_promo(db, rental_type, opt.id, at)
+        promo = find_best_promo(db, rental_type, opt, at)
         if promo:
-            duration_mins, effective_price, bonus = compute_rental_terms(opt, promo)
+            terms = compute_rental_terms(opt, promo, db)
             hints[opt.id] = {
                 "promo_id": promo.id,
                 "name": promo.name,
-                "summary": promo_summary(promo, opt),
+                "summary": promo_summary(promo, opt, terms),
                 "kind": promo.promo_kind,
-                "bonus_minutes": bonus,
+                "bonus_minutes": terms.bonus_minutes,
                 "discount_percent": promo.discount_percent or 0,
                 "original_price": opt.price,
-                "effective_price": effective_price,
-                "effective_duration_minutes": duration_mins,
-                "has_discount": effective_price < opt.price,
-                "duration_label": format_duration_minutes(duration_mins),
+                "effective_price": terms.amount_billed,
+                "effective_duration_minutes": terms.play_duration_minutes,
+                "has_discount": terms.amount_billed < opt.price,
+                "duration_label": format_duration_minutes(terms.play_duration_minutes),
+                "is_extended_bundle": terms.is_extended_bundle,
             }
     return hints
+
+
+def _greedy_breakdown(
+    options: list[RentalTimeOption],
+    duration_minutes: int,
+) -> tuple[float, list, Optional[RentalTimeOption]]:
+    remaining = duration_minutes
+    total_amount = 0.0
+    breakdown = []
+    primary_option = None
+
+    sorted_opts = sorted(options, key=lambda o: o.duration_minutes, reverse=True)
+
+    while remaining > 0:
+        best = next((o for o in sorted_opts if o.duration_minutes <= remaining), sorted_opts[-1])
+        if primary_option is None:
+            primary_option = best
+        total_amount += best.price
+        last = breakdown[-1] if breakdown else None
+        if last and last["option_id"] == best.id:
+            last["count"] += 1
+        else:
+            breakdown.append({
+                "option_id": best.id,
+                "label": best.label,
+                "price": best.price,
+                "duration_minutes": best.duration_minutes,
+                "count": 1,
+            })
+        remaining = max(0, remaining - best.duration_minutes)
+
+    return total_amount, breakdown, primary_option
+
+
+def quote_rental_by_duration(
+    db: Session,
+    rental_type: str,
+    duration_hours: int,
+    at: Optional[datetime] = None,
+) -> DurationQuote:
+    """Price a rental by hours, applying promos before greedy option stacking."""
+    at = at or facility_now()
+    duration_minutes = duration_hours * 60
+
+    options = (
+        db.query(RentalTimeOption)
+        .filter(
+            RentalTimeOption.type == rental_type,
+            RentalTimeOption.is_active.is_(True),
+        )
+        .order_by(RentalTimeOption.duration_minutes.desc())
+        .all()
+    )
+    if not options:
+        raise ValueError(f"No active {rental_type} time options configured")
+
+    exact = next((o for o in options if o.duration_minutes == duration_minutes), None)
+    if exact:
+        promo = find_best_promo(db, rental_type, exact, at)
+        terms = compute_rental_terms(exact, promo, db)
+        label = promo_summary(promo, exact, terms) if promo else exact.label
+        return DurationQuote(
+            play_duration_minutes=terms.play_duration_minutes,
+            amount_billed=terms.amount_billed,
+            bonus_minutes=terms.bonus_minutes,
+            promo=promo,
+            primary_option=exact,
+            breakdown=[],
+            plan_label=label,
+        )
+
+    promo, base = find_bundle_promo_for_duration(db, rental_type, duration_minutes, at)
+    if promo and base:
+        terms = RentalTerms(duration_minutes, base.price, 0, is_extended_bundle=True)
+        bundle_option = next((o for o in options if o.duration_minutes == duration_minutes), base)
+        label = promo_summary(promo, bundle_option, terms)
+        return DurationQuote(
+            play_duration_minutes=terms.play_duration_minutes,
+            amount_billed=terms.amount_billed,
+            bonus_minutes=0,
+            promo=promo,
+            primary_option=bundle_option,
+            breakdown=[],
+            plan_label=label,
+        )
+
+    total_amount, breakdown, primary_option = _greedy_breakdown(options, duration_minutes)
+    breakdown_str = " + ".join(
+        item["label"] + (f" ×{item['count']}" if item["count"] > 1 else "")
+        for item in breakdown
+    )
+    return DurationQuote(
+        play_duration_minutes=duration_minutes,
+        amount_billed=total_amount,
+        bonus_minutes=0,
+        promo=None,
+        primary_option=primary_option,
+        breakdown=breakdown,
+        plan_label=f"{duration_hours}h ({breakdown_str})",
+    )

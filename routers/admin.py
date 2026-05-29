@@ -153,6 +153,31 @@ def save_overtime_settings(
     return RedirectResponse("/admin?tab=overtime", status_code=302)
 
 
+@router.post("/settings/booking")
+def save_booking_settings(
+    request: Request,
+    db: Session = Depends(get_db),
+    allow_cancel_unpaid_booking: Optional[str] = Form(None),
+    allow_cancel_paid_booking: Optional[str] = Form(None),
+):
+    user = require_role(request, db, "admin")
+    settings = ensure_settings(db)
+    settings.allow_cancel_unpaid_booking = allow_cancel_unpaid_booking == "on"
+    settings.allow_cancel_paid_booking = allow_cancel_paid_booking == "on"
+    log_event(
+        db,
+        "SETTINGS_UPDATED",
+        (
+            "Booking cancellation: "
+            f"unpaid {'allowed' if settings.allow_cancel_unpaid_booking else 'blocked'}, "
+            f"paid {'allowed' if settings.allow_cancel_paid_booking else 'blocked'}"
+        ),
+        user.id,
+    )
+    db.commit()
+    return RedirectResponse("/admin?tab=overtime", status_code=302)
+
+
 @router.post("/time-option/add")
 def add_time_option(
     request: Request,

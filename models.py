@@ -50,6 +50,8 @@ class SystemSettings(Base):
     racket_overtime_rate = Column(Float, default=20.0)
     overtime_grace_minutes = Column(Integer, default=10)
     warning_minutes = Column(Integer, default=15)
+    allow_cancel_unpaid_booking = Column(Boolean, default=True)
+    allow_cancel_paid_booking = Column(Boolean, default=False)
 
 
 class RentalTimeOption(Base):
@@ -109,6 +111,9 @@ class CourtRental(Base):
     overtime_charge = Column(Float, default=0)
     checkout_payment = Column(Float, default=0)
     checkout_change = Column(Float, default=0)
+    payment_pending = Column(Boolean, default=False)
+    payment_pending_amount = Column(Float, default=0)
+    auto_completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     court = relationship("Court", back_populates="rentals")
@@ -138,6 +143,9 @@ class RacketRental(Base):
     overtime_charge = Column(Float, default=0)
     checkout_payment = Column(Float, default=0)
     checkout_change = Column(Float, default=0)
+    payment_pending = Column(Boolean, default=False)
+    payment_pending_amount = Column(Float, default=0)
+    auto_completed = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     racket = relationship("Racket", back_populates="rentals")

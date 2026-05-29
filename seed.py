@@ -39,6 +39,7 @@ def seed_database(db: Session) -> bool:
     if db.query(RentalTimeOption).count() == 0:
         court_options = [
             ("3 Hours", 180, 300),
+            ("4 Hours", 240, 400),
             ("6 Hours", 360, 500),
             ("12 Hours", 720, 800),
         ]

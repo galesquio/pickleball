@@ -2,6 +2,69 @@ const CURRENCY = '₱';
 
 let completeContext = { type: null, rentalId: null, preview: null };
 let paymentContext = { type: null, rentalId: null, preview: null };
+let _racketOptions = null;
+let _racketDurationHours = 1;
+let _racketPriceQuote = null;
+
+function computeGreedyDuration(durationHours, options) {
+  if (!options?.length) {
+    return { total: 0, breakdown: [] };
+  }
+  const opts = [...options].sort((a, b) => b.duration_minutes - a.duration_minutes);
+  let remaining = durationHours * 60;
+  let total = 0;
+  const breakdown = [];
+
+  while (remaining > 0) {
+    const best = opts.find((o) => o.duration_minutes <= remaining) || opts[opts.length - 1];
+    total += best.price;
+    const last = breakdown[breakdown.length - 1];
+    if (last && last.id === best.id) {
+      last.count += 1;
+    } else {
+      breakdown.push({ id: best.id, label: best.label, price: best.price, count: 1 });
+    }
+    remaining = Math.max(0, remaining - best.duration_minutes);
+  }
+  return { total, breakdown };
+}
+
+function loadRacketOptionsFromDom() {
+  const el = document.getElementById('racket-time-options-data');
+  if (!el) return [];
+  try {
+    const parsed = JSON.parse(el.textContent);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+async function ensureRacketOptions() {
+  if (_racketOptions?.length) return _racketOptions;
+  const fromDom = loadRacketOptionsFromDom();
+  if (fromDom.length) {
+    _racketOptions = fromDom;
+    return _racketOptions;
+  }
+  try {
+    const res = await fetch('/api/time-options?type=racket');
+    const data = await res.json();
+    _racketOptions = data.options || [];
+  } catch {
+    _racketOptions = [];
+  }
+  return _racketOptions;
+}
+
+function adjustRacketRentHours(delta) {
+  const next = _racketDurationHours + delta;
+  if (next < 1 || next > 12) return;
+  _racketDurationHours = next;
+  const paymentInput = document.getElementById('rent-racket-payment');
+  if (paymentInput) delete paymentInput.dataset.touched;
+  refreshRacketRentDuration();
+}
 
 function openModal(id) {
   document.getElementById(id).classList.remove('hidden');
@@ -29,9 +92,13 @@ function openRentRacketModal(racketId, racketName) {
   const select = document.getElementById('rent-racket-select');
   if (select) select.value = racketId;
   document.getElementById('rent-racket-id').value = racketId;
+  _racketDurationHours = 1;
+  _racketPriceQuote = null;
+  _racketOptions = loadRacketOptionsFromDom();
   resetRentPaymentTouched('racket');
   openModal('modal-rent-racket');
-  updateRentPayment('racket');
+  ensureRacketOptions().then(() => refreshRacketRentDuration());
+  refreshRacketRentDuration();
 }
 
 function openSwapModal(rentalId, customer, timeRemaining) {
@@ -45,9 +112,78 @@ function money(n) {
 }
 
 function selectedBilledAmount(kind) {
-  const selector = kind === 'court' ? '.rent-court-option:checked' : '.rent-racket-option:checked';
-  const radio = document.querySelector(selector);
+  if (kind === 'racket') {
+    if (_racketPriceQuote != null) return _racketPriceQuote.total_amount || 0;
+    if (!_racketOptions?.length) return 0;
+    return computeGreedyDuration(_racketDurationHours, _racketOptions).total;
+  }
+  const radio = document.querySelector('.rent-court-option:checked');
   return radio ? parseFloat(radio.dataset.billed) || 0 : 0;
+}
+
+async function fetchRacketPriceQuote(durationHours) {
+  try {
+    const res = await fetch(`/api/rent/racket/price?duration_hours=${durationHours}`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+function refreshRacketRentDuration() {
+  const durEl = document.getElementById('rent-racket-dur-value');
+  const endEl = document.getElementById('rent-racket-end-label');
+  const breakdownEl = document.getElementById('rent-racket-breakdown');
+  const minusBtn = document.getElementById('rent-racket-dur-minus');
+  const plusBtn = document.getElementById('rent-racket-dur-plus');
+  if (!durEl) return;
+
+  const hours = _racketDurationHours;
+  durEl.textContent = hours;
+  if (minusBtn) minusBtn.disabled = hours <= 1;
+  if (plusBtn) plusBtn.disabled = hours >= 12;
+
+  const now = new Date();
+  const playHours = (_racketPriceQuote?.play_duration_minutes || hours * 60) / 60;
+  const end = new Date(now.getTime() + playHours * 60 * 60 * 1000);
+  if (endEl) {
+    endEl.textContent = `Ends around ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  if (breakdownEl) {
+    breakdownEl.innerHTML = '<span class="text-gray-400 text-xs">Loading rates…</span>';
+    delete breakdownEl.dataset.total;
+  }
+
+  fetchRacketPriceQuote(hours).then((data) => {
+    if (!data || _racketDurationHours !== hours) return;
+    _racketPriceQuote = data;
+    const total = data.total_amount || 0;
+    const playMins = data.play_duration_minutes || hours * 60;
+    if (endEl) {
+      const end = new Date(Date.now() + playMins * 60 * 1000);
+      endEl.textContent = `Ends around ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    if (!breakdownEl) {
+      updateRentPayment('racket');
+      return;
+    }
+    let html = '';
+    if (data.promo) {
+      html += `<div class="flex justify-between text-violet-700"><span>🎉 ${data.promo.name}</span><span class="text-xs font-medium">${data.promo.summary}</span></div>`;
+    }
+    (data.breakdown || []).forEach((item) => {
+      const label = item.count > 1 ? `${item.label} ×${item.count}` : item.label;
+      html += `<div class="flex justify-between"><span>${label}</span><span>${money(item.price * item.count)}</span></div>`;
+    });
+    if (!html) {
+      html = `<div class="flex justify-between"><span>${hours}h rental</span><span>${money(total)}</span></div>`;
+    }
+    breakdownEl.innerHTML = html;
+    breakdownEl.dataset.total = String(total);
+    updateRentPayment('racket');
+  });
 }
 
 function updateRentPayment(kind) {
@@ -79,9 +215,11 @@ function initRentPayment(kind) {
   const formId = kind === 'court' ? 'form-rent-court' : 'form-rent-racket';
   const form = document.getElementById(formId);
   if (!form) return;
-  form.querySelectorAll(kind === 'court' ? '.rent-court-option' : '.rent-racket-option').forEach((radio) => {
-    radio.addEventListener('change', () => updateRentPayment(kind));
-  });
+  if (kind === 'court') {
+    form.querySelectorAll('.rent-court-option').forEach((radio) => {
+      radio.addEventListener('change', () => updateRentPayment(kind));
+    });
+  }
   document.getElementById(`rent-${kind}-payment`)?.addEventListener('input', (e) => {
     e.target.dataset.touched = '1';
     updateRentPayment(kind);
@@ -315,13 +453,12 @@ function initModalForms() {
     const form = e.target;
     const racketId = parseInt(form.querySelector('[name="racket_id"]').value);
     const customer = form.querySelector('[name="customer_name"]').value;
-    const timeOptionId = parseInt(form.querySelector('[name="time_option_id"]:checked').value);
     const payment = parseFloat(document.getElementById('rent-racket-payment').value) || 0;
     try {
       const data = await postJson('/api/rent/racket', {
         racket_id: racketId,
         customer_name: customer,
-        time_option_id: timeOptionId,
+        duration_hours: _racketDurationHours,
         payment_received: payment,
       });
       let msg = `Racket rented — billed ${money(data.amount_billed)}`;
@@ -363,6 +500,7 @@ window.openModal = openModal;
 window.closeModal = closeModal;
 window.openRentCourtModal = openRentCourtModal;
 window.openRentRacketModal = openRentRacketModal;
+window.adjustRacketRentHours = adjustRacketRentHours;
 window.openSwapModal = openSwapModal;
 window.openCompleteModal = openCompleteModal;
 window.openRecordPaymentModal = openRecordPaymentModal;

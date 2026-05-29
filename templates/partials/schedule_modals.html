@@ -1,0 +1,126 @@
+<!-- Court Schedule — Book Slot Modal -->
+<div id="modal-sched-book" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <h2 class="text-base font-bold text-gray-900">Book Court</h2>
+      <button onclick="closeModal('modal-sched-book')" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="px-6 py-5 space-y-4">
+
+      <!-- Slot info -->
+      <div class="rounded-lg bg-teal-50 border border-teal-200 px-4 py-3">
+        <div class="text-xs font-semibold text-teal-700 uppercase tracking-wide mb-0.5" id="sb-court-label">Court</div>
+        <div class="text-sm font-bold text-teal-900" id="sb-slot-label">—</div>
+      </div>
+
+      <!-- Duration picker -->
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Duration</label>
+        <div class="flex items-center gap-3">
+          <button id="sb-dur-minus" type="button"
+            class="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-100 text-lg font-bold transition-colors select-none">−</button>
+          <div class="flex-1 text-center">
+            <span id="sb-dur-value" class="text-2xl font-bold text-gray-900">1</span>
+            <span class="text-sm text-gray-500 ml-1">hr</span>
+          </div>
+          <button id="sb-dur-plus" type="button"
+            class="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-700 hover:bg-gray-100 text-lg font-bold transition-colors select-none">+</button>
+        </div>
+        <p class="text-xs text-gray-400 text-center mt-1.5" id="sb-end-label"></p>
+      </div>
+
+      <!-- Pricing -->
+      <div class="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 space-y-1.5">
+        <div class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Pricing</div>
+        <div id="sb-breakdown" class="space-y-1 text-sm text-gray-600"></div>
+        <div class="flex justify-between pt-1.5 border-t border-gray-200 text-sm font-bold text-gray-900">
+          <span>Total</span>
+          <span id="sb-total">₱0</span>
+        </div>
+      </div>
+
+      <!-- Customer name -->
+      <div>
+        <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Customer Name</label>
+        <input type="text" id="sb-customer" placeholder="Enter customer name" required
+          class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none">
+      </div>
+
+      <!-- Payment -->
+      <div class="rounded-lg bg-teal-50 border border-teal-200 px-4 py-3 space-y-2">
+        <div>
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Payment received</label>
+          <input type="number" id="sb-payment" min="0" step="0.01" placeholder="0.00"
+            class="w-full bg-white border border-teal-200 rounded-lg px-3 py-2.5 text-lg font-semibold text-gray-900 focus:ring-2 focus:ring-teal-500 outline-none">
+          <p class="text-[11px] text-teal-700 mt-1">Partial pay OK — collect balance anytime during the rental.</p>
+        </div>
+        <div class="flex justify-between text-sm text-teal-800">
+          <span>Balance after payment</span>
+          <span id="sb-balance" class="font-semibold">₱0</span>
+        </div>
+      </div>
+
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="closeModal('modal-sched-book')"
+          class="flex-1 border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Cancel</button>
+        <button type="button" id="sb-confirm-btn"
+          class="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Confirm Booking</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Court Schedule — Booking Detail Modal -->
+<div id="modal-sched-detail" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-2">
+        <h2 class="text-base font-bold text-gray-900">Booking Details</h2>
+        <span id="sd-status-badge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+      </div>
+      <button onclick="closeModal('modal-sched-detail')" class="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="px-6 py-5 space-y-4">
+      <div class="rounded-lg bg-gray-50 border border-gray-100 px-4 py-3 text-sm space-y-1.5">
+        <div class="font-semibold text-gray-900 text-base" id="sd-customer">—</div>
+        <div class="text-gray-500 text-xs">Plan: <span id="sd-plan" class="text-gray-700 font-medium"></span></div>
+        <div class="text-gray-500 text-xs">Time: <span id="sd-time" class="text-gray-700 font-medium"></span></div>
+      </div>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between text-gray-600">
+          <span>Billed</span>
+          <span id="sd-billed" class="font-medium text-gray-800">—</span>
+        </div>
+        <div class="flex justify-between text-gray-600">
+          <span>Paid</span>
+          <span id="sd-paid" class="font-medium text-gray-800">—</span>
+        </div>
+        <div class="flex justify-between pt-2 border-t border-gray-200 font-semibold text-amber-700">
+          <span>Balance due</span>
+          <span id="sd-balance">—</span>
+        </div>
+      </div>
+      <div id="sd-pending-banner" class="hidden rounded-lg bg-orange-50 border border-orange-300 px-4 py-3 text-sm text-orange-900">
+        <div class="font-semibold text-orange-800 mb-0.5">Slot ended — collect cash</div>
+        <p class="text-xs text-orange-700">This stays on the schedule until you confirm collection. The system marked the sale as paid for reporting only. Collect <span id="sd-pending-amount" class="font-bold">—</span> from the customer, then tap <strong>Cash collected</strong> below.</p>
+      </div>
+      <p id="sd-cancel-hint" class="hidden text-xs text-gray-500"></p>
+      <div class="flex gap-2 pt-1 flex-wrap">
+        <button type="button" onclick="closeModal('modal-sched-detail')"
+          class="flex-1 min-w-[80px] border border-gray-200 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">Close</button>
+        <button type="button" id="sd-cancel-btn"
+          class="hidden flex-1 min-w-[80px] border border-red-200 text-red-700 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-50 transition-colors">Cancel booking</button>
+        <button type="button" id="sd-pay-btn"
+          class="flex-1 min-w-[80px] bg-teal-600 hover:bg-teal-700 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Pay</button>
+        <button type="button" id="sd-complete-btn"
+          class="flex-1 min-w-[80px] bg-gray-800 hover:bg-gray-900 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Complete</button>
+        <button type="button" id="sd-collect-btn"
+          class="hidden flex-1 min-w-[80px] bg-orange-600 hover:bg-orange-700 text-white py-2.5 rounded-lg text-sm font-semibold transition-colors">Cash collected</button>
+      </div>
+    </div>
+  </div>
+</div>

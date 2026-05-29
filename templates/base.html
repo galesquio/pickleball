@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>{% block title %}Pickleball Facility{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,13 +14,122 @@
       to   { opacity: 1; transform: translateX(0); }
     }
     .toast-in { animation: toast-in 0.2s ease-out; }
+
+    /* iOS safe area for bottom nav */
+    .safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+    /* Fast tap — no 300ms delay */
+    a, button { touch-action: manipulation; }
   </style>
   {% block head %}{% endblock %}
 </head>
-<body class="bg-gray-50 min-h-screen flex">
+<body class="bg-gray-50 flex {% if user is defined and user %}h-screen overflow-hidden lg:bg-gray-200/80{% else %}min-h-screen{% endif %}">
 
   {% if user is defined and user %}
-  <aside class="w-60 bg-gray-900 text-white flex flex-col min-h-screen shrink-0">
+
+  <!-- ════════════════════════════════════════════════
+       Mobile top header  (below lg)
+  ═══════════════════════════════════════════════════ -->
+  <header class="lg:hidden fixed top-0 inset-x-0 z-30 bg-gray-900 border-b border-gray-800 h-14 flex items-center px-4 justify-between shrink-0">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-lg leading-none shrink-0">🏓</div>
+      <div>
+        <div class="font-bold text-sm text-white leading-tight">Pickleball</div>
+        <div class="text-[10px] text-gray-500 leading-tight">Facility Manager</div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="flex items-center gap-2 text-sm text-gray-300">
+        <div class="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs font-bold text-gray-200 shrink-0">
+          {{ user.username[0]|upper }}
+        </div>
+        <span class="text-xs font-medium hidden xs:block">{{ user.username }}</span>
+      </div>
+      <a href="/logout" class="w-9 h-9 flex items-center justify-center rounded-lg text-gray-500 hover:text-red-400 transition-colors -mr-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <!-- ════════════════════════════════════════════════
+       Mobile bottom navigation  (below lg)
+  ═══════════════════════════════════════════════════ -->
+  <nav class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 safe-bottom">
+    <div class="flex items-stretch">
+
+      <!-- Home / Dashboard -->
+      {% set _active = request.url.path == '/dashboard' %}
+      <a href="/dashboard" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-teal-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-teal-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Home</span>
+      </a>
+
+      <!-- Courts -->
+      {% set _active = request.url.path == '/courts' %}
+      <a href="/courts" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-teal-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-teal-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path stroke-linecap="round" d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Courts</span>
+      </a>
+
+      <!-- Rackets -->
+      {% set _active = request.url.path == '/rackets' %}
+      <a href="/rackets" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-teal-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-teal-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 2C8.134 2 5 5.134 5 9c0 2.486 1.27 4.672 3.2 5.989L9 21h6l.8-6.011C17.73 13.672 19 11.486 19 9c0-3.866-3.134-7-7-7z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 21h6M10 17h4"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Rackets</span>
+      </a>
+
+      <!-- Sales -->
+      {% set _active = request.url.path == '/sales' %}
+      <a href="/sales" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-teal-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-teal-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Sales</span>
+      </a>
+
+      {% if is_admin %}
+      <!-- Admin -->
+      {% set _active = request.url.path.startswith('/admin') %}
+      <a href="/admin" class="flex-1 flex flex-col items-center justify-center pt-2.5 pb-1.5 gap-0.5 relative select-none
+        {{ 'text-teal-600' if _active else 'text-gray-400' }}">
+        {% if _active %}<div class="absolute top-0 left-1/4 right-1/4 h-0.5 bg-teal-500 rounded-b-full"></div>{% endif %}
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="{{ '2.5' if _active else '1.75' }}" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        <span class="text-[10px] font-{{ 'semibold' if _active else 'medium' }}">Admin</span>
+      </a>
+      {% endif %}
+
+    </div>
+  </nav>
+
+  <!-- App shell: centered on widescreen (lg+) -->
+  <div class="flex flex-1 min-h-0 min-w-0 w-full lg:max-w-[1536px] lg:mx-auto lg:bg-gray-50 lg:shadow-xl lg:ring-1 lg:ring-gray-200/60">
+
+  <!-- ════════════════════════════════════════════════
+       Desktop sidebar  (lg and above only)
+  ═══════════════════════════════════════════════════ -->
+  <aside class="hidden lg:flex w-60 bg-gray-900 text-white flex-col h-full shrink-0">
+
     <!-- Logo -->
     <div class="px-5 pt-6 pb-5 border-b border-gray-800">
       <div class="flex items-center gap-3">
@@ -41,6 +150,24 @@
         </svg>
         Dashboard
       </a>
+      <div class="my-1 border-t border-gray-800/60"></div>
+      <a href="/courts" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if request.url.path == '/courts' %}bg-teal-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="18" height="18" rx="2" stroke-linejoin="round"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3 9h18M3 15h18M9 3v18M15 3v18"/>
+        </svg>
+        Courts
+      </a>
+      <a href="/rackets" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+        {% if request.url.path == '/rackets' %}bg-teal-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 2C8.134 2 5 5.134 5 9c0 2.486 1.27 4.672 3.2 5.989L9 21h6l.8-6.011C17.73 13.672 19 11.486 19 9c0-3.866-3.134-7-7-7z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 21h6M10 17h4"/>
+        </svg>
+        Rackets
+      </a>
+      <div class="my-1 border-t border-gray-800/60"></div>
       <a href="/sales" class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
         {% if request.url.path == '/sales' %}bg-teal-600 text-white{% else %}text-gray-400 hover:text-white hover:bg-gray-800{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -79,13 +206,18 @@
       </a>
     </div>
   </aside>
+
   {% endif %}
 
-  <main class="flex-1 overflow-auto">
+  <main class="flex-1 min-h-0 min-w-0 overflow-y-auto{% if user is defined and user %} pt-14 lg:pt-0 pb-24 lg:pb-0{% endif %}">
     {% block content %}{% endblock %}
   </main>
 
-  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none"></div>
+  {% if user is defined and user %}
+  </div><!-- /app shell -->
+  {% endif %}
+
+  <div id="toast-container" class="fixed top-16 right-3 lg:top-4 lg:right-4 z-50 space-y-2 pointer-events-none"></div>
   {% block modals %}{% endblock %}
   {% block scripts %}{% endblock %}
 

@@ -18,7 +18,7 @@
 </style>
 {% endblock %}
 {% block content %}
-<div class="p-6 lg:p-8 max-w-screen-xl">
+<div class="p-6 lg:p-8 max-w-screen-xl mx-auto w-full">
 
   <div class="mb-6">
     <h1 class="text-2xl font-bold text-gray-900">Admin Panel</h1>
@@ -190,6 +190,34 @@
         <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">Save settings</button>
       </form>
     </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden max-w-2xl">
+      <div class="px-6 py-4 border-b border-gray-100">
+        <h3 class="font-semibold text-gray-900 text-sm">Advance booking cancellation</h3>
+        <p class="text-xs text-gray-500 mt-1">Controls whether staff can cancel upcoming court schedule bookings before they start. Refunds, if any, are handled manually at the counter.</p>
+      </div>
+      <form method="post" action="/admin/settings/booking" class="px-6 py-5 space-y-4">
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" name="allow_cancel_unpaid_booking" value="on"
+            class="w-4 h-4 mt-0.5 accent-teal-600 shrink-0"
+            {% if settings.allow_cancel_unpaid_booking %}checked{% endif %}>
+          <span>
+            <span class="text-sm font-medium text-gray-900">Allow cancelling unpaid bookings</span>
+            <span class="block text-xs text-gray-500 mt-0.5">Bookings with an outstanding balance can be cancelled from the court schedule.</span>
+          </span>
+        </label>
+        <label class="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" name="allow_cancel_paid_booking" value="on"
+            class="w-4 h-4 mt-0.5 accent-teal-600 shrink-0"
+            {% if settings.allow_cancel_paid_booking %}checked{% endif %}>
+          <span>
+            <span class="text-sm font-medium text-gray-900">Allow cancelling paid-in-full bookings</span>
+            <span class="block text-xs text-gray-500 mt-0.5">Turn off if your policy does not allow refunds or cancellations after payment (common for prepaid slots).</span>
+          </span>
+        </label>
+        <button type="submit" class="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2 text-sm font-medium transition-colors">Save cancellation policy</button>
+      </form>
+    </div>
   </div>
 
   <div id="tab-promos" class="tab-panel space-y-6">
@@ -253,9 +281,10 @@
             <option value="racket">Racket</option>
           </select>
           <select name="promo_kind" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-            <option value="bonus_minutes">Bonus time (minutes)</option>
-            <option value="discount_percent">Discount (%)</option>
+            <option value="bonus_minutes">Bonus time (e.g. pay 3h, play 4h)</option>
+            <option value="discount_percent">Discount (% off list price)</option>
           </select>
+          <p class="md:col-span-3 text-xs text-gray-500 -mt-1">Bonus promos: link to the base time option. A longer option with duration = base + bonus is billed at the base price (e.g. 4h slot uses 3h rate).</p>
           <select name="time_option_id" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
             <option value="">Any time option</option>
             <optgroup label="Court">
@@ -294,8 +323,8 @@
           <option value="racket">Racket</option>
         </select>
         <select name="promo_kind" id="edit-promo-kind" required class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="bonus_minutes">Bonus time (minutes)</option>
-          <option value="discount_percent">Discount (%)</option>
+          <option value="bonus_minutes">Bonus time (e.g. pay 3h, play 4h)</option>
+          <option value="discount_percent">Discount (% off list price)</option>
         </select>
         <select name="time_option_id" id="edit-promo-time-option" class="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white md:col-span-2">
           <option value="">Any time option</option>

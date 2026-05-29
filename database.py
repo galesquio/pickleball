@@ -85,7 +85,8 @@ def migrate_db():
             conn.execute(
                 text(
                     "INSERT INTO system_settings (id, court_overtime_rate, racket_overtime_rate, "
-                    "overtime_grace_minutes, warning_minutes) VALUES (1, 50.0, 20.0, 10, 15)"
+                    "overtime_grace_minutes, warning_minutes, allow_cancel_unpaid_booking, "
+                    "allow_cancel_paid_booking) VALUES (1, 50.0, 20.0, 10, 15, 1, 0)"
                 )
             )
             insp = inspect(engine)
@@ -98,12 +99,18 @@ def migrate_db():
             ("court_rentals", "overtime_charge", "REAL DEFAULT 0"),
             ("court_rentals", "checkout_payment", "REAL DEFAULT 0"),
             ("court_rentals", "checkout_change", "REAL DEFAULT 0"),
+            ("court_rentals", "payment_pending", "INTEGER DEFAULT 0"),
+            ("court_rentals", "payment_pending_amount", "REAL DEFAULT 0"),
+            ("court_rentals", "auto_completed", "INTEGER DEFAULT 0"),
             ("racket_rentals", "completed_at", "DATETIME"),
             ("racket_rentals", "overtime_minutes", "INTEGER DEFAULT 0"),
             ("racket_rentals", "overtime_hours_charged", "INTEGER DEFAULT 0"),
             ("racket_rentals", "overtime_charge", "REAL DEFAULT 0"),
             ("racket_rentals", "checkout_payment", "REAL DEFAULT 0"),
             ("racket_rentals", "checkout_change", "REAL DEFAULT 0"),
+            ("racket_rentals", "payment_pending", "INTEGER DEFAULT 0"),
+            ("racket_rentals", "payment_pending_amount", "REAL DEFAULT 0"),
+            ("racket_rentals", "auto_completed", "INTEGER DEFAULT 0"),
         ]
         amount_billed_migrated: list[str] = []
         for table, column, ddl in [
@@ -138,6 +145,47 @@ def migrate_db():
             )
             conn.execute(
                 text(f"UPDATE {table} SET amount_paid = 0 WHERE status = 'active'")
+            )
+
+        for table in ("court_rentals", "racket_rentals"):
+            if table not in tables:
+                continue
+            cols = {c["name"] for c in insp.get_columns(table)}
+            if "auto_completed" in cols and "payment_pending" in cols:
+                conn.execute(
+                    text(
+                        f"UPDATE {table} SET auto_completed = 1 "
+                        "WHERE status = 'completed' AND payment_pending = 1"
+                    )
+                )
+
+        if "system_settings" in tables:
+            settings_cols = {c["name"] for c in insp.get_columns("system_settings")}
+            booking_policy_cols = [
+                ("allow_cancel_unpaid_booking", "INTEGER DEFAULT 1"),
+                ("allow_cancel_paid_booking", "INTEGER DEFAULT 0"),
+            ]
+            for column, ddl in booking_policy_cols:
+                if column not in settings_cols:
+                    conn.execute(
+                        text(f"ALTER TABLE system_settings ADD COLUMN {column} {ddl}")
+                    )
+
+        # Prepaid auto-completions were incorrectly flagged for overtime-only collection.
+        for table in ("court_rentals", "racket_rentals"):
+            if table not in tables:
+                continue
+            cols = {c["name"] for c in insp.get_columns(table)}
+            if "payment_pending" not in cols:
+                continue
+            conn.execute(
+                text(
+                    f"UPDATE {table} SET payment_pending = 0, payment_pending_amount = 0 "
+                    "WHERE payment_pending = 1 AND auto_completed = 1 "
+                    "AND COALESCE(overtime_charge, 0) > 0 "
+                    "AND payment_pending_amount <= COALESCE(overtime_charge, 0) + 0.01 "
+                    "AND payment_pending_amount < COALESCE(amount_billed, 0) - 0.01"
+                )
             )
 
 
